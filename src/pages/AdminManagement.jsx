@@ -126,15 +126,15 @@ export default function AdminManagement() {
 
   const addFlatMutation = useMutation({
     mutationFn: async (data) => {
-      return await storage.createFlat(data.number, data.blockId, data.floor);
+      return await storage.createFlatsBulk(data.blockId, data.floors, data.flatsPerFloor);
     },
-    onSuccess: () => {
-      toast({ title: "Flat added successfully" });
+    onSuccess: (data) => {
+      toast({ title: `Successfully processed ${data.count} flats` });
       refetchFlats();
       setAddFlatOpen(false);
     },
     onError: () => {
-      toast({ title: "Failed to add flat", variant: "destructive" });
+      toast({ title: "Failed to add flats", variant: "destructive" });
     },
   });
 
@@ -625,25 +625,32 @@ function AddBlockForm({ onSubmit, isLoading }) {
 
 function AddFlatForm({ blocks, onSubmit, isLoading }) {
   const [formData, setFormData] = useState({
-    number: "",
-    blockId: "",
-    floor: "",
+    blockId: "all",
+    floors: "",
+    flatsPerFloor: "",
   });
 
   const handleSubmit = (e) => {
     e.preventDefault();
     onSubmit({
-      number: formData.number,
       blockId: formData.blockId,
-      floor: parseInt(formData.floor),
+      floors: formData.floors,
+      flatsPerFloor: formData.flatsPerFloor,
     });
-    setFormData({ number: "", blockId: "", floor: "" });
+    setFormData({ blockId: "all", floors: "", flatsPerFloor: "" });
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="bg-blue-50 p-3 rounded-md mb-4">
+        <p className="text-sm text-blue-700">
+          <strong>Bulk Generator:</strong> This will automatically create flats for the selected blocks.
+          Existing flats will be skipped.
+        </p>
+      </div>
+
       <div>
-        <Label htmlFor="block">Block</Label>
+        <Label htmlFor="block">Target Block(s)</Label>
         <Select
           value={formData.blockId}
           onValueChange={(value) => setFormData({ ...formData, blockId: value })}
@@ -652,6 +659,7 @@ function AddFlatForm({ blocks, onSubmit, isLoading }) {
             <SelectValue placeholder="Select block" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="all" className="font-semibold">All Blocks (Apply to all)</SelectItem>
             {blocks.map((block) => (
               <SelectItem key={block.id} value={String(block.id)}>
                 {block.name}
@@ -660,37 +668,50 @@ function AddFlatForm({ blocks, onSubmit, isLoading }) {
           </SelectContent>
         </Select>
       </div>
-      <div>
-        <Label htmlFor="number">Flat Number</Label>
-        <Input
-          id="number"
-          placeholder="Enter flat number (e.g., 101)"
-          value={formData.number}
-          onChange={(e) => setFormData({ ...formData, number: e.target.value })}
-          required
-          data-testid="input-flat-number"
-        />
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="floors">Number of Floors</Label>
+          <Input
+            id="floors"
+            type="number"
+            min="1"
+            max="100"
+            placeholder="e.g. 5"
+            value={formData.floors}
+            onChange={(e) => setFormData({ ...formData, floors: e.target.value })}
+            required
+            data-testid="input-floors"
+          />
+        </div>
+        <div>
+          <Label htmlFor="flatsPerFloor">Flats per Floor</Label>
+          <Input
+            id="flatsPerFloor"
+            type="number"
+            min="1"
+            max="20"
+            placeholder="e.g. 4"
+            value={formData.flatsPerFloor}
+            onChange={(e) => setFormData({ ...formData, flatsPerFloor: e.target.value })}
+            required
+            data-testid="input-flats-per-floor"
+          />
+        </div>
       </div>
-      <div>
-        <Label htmlFor="floor">Floor</Label>
-        <Input
-          id="floor"
-          type="number"
-          placeholder="Enter floor number"
-          value={formData.floor}
-          onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
-          required
-          data-testid="input-floor"
-        />
+
+      <div className="text-xs text-slate-500">
+        Output example: Floor 1 → 101-{100 + (parseInt(formData.flatsPerFloor) || 4)}
       </div>
+
       <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-create-flat">
         {isLoading ? (
           <>
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            Creating...
+            Generating Flats...
           </>
         ) : (
-          "Create Flat"
+          "Generate Flats"
         )}
       </Button>
     </form>

@@ -34,6 +34,18 @@ export default async function handler(req, res) {
     }
 
     const db = admin.firestore();
+
+    // 1. Idempotency Check
+    if (data?.requestId) {
+      const requestRef = db.collection("residencies").doc(residencyId).collection("visitor_requests").doc(data.requestId);
+      const requestDoc = await requestRef.get();
+      if (requestDoc.exists && requestDoc.data().notificationSent) {
+        console.log(`Notification already sent for request ${data.requestId}`);
+        res.status(200).json({ success: true, message: "Notification already sent" });
+        return;
+      }
+    }
+
     let tokens = [];
     let flatNumber;
     let blockName;
@@ -78,6 +90,9 @@ export default async function handler(req, res) {
       return;
     }
 
+    // 2. Deduplicate tokens
+    tokens = [...new Set(tokens)];
+
     if (tokens.length === 0) {
       res.status(200).json({ message: "No registered devices found" });
       return;
@@ -94,18 +109,57 @@ export default async function handler(req, res) {
       location: blockName && flatNumber ? `${blockName} • Flat ${flatNumber}` : (flatNumber ? `Flat ${flatNumber}` : ""),
     };
 
+    // 3. Message Config for Background/Closed App Functionality
+    const messageConfig = {
+      notification: {
+        title: payloadData.title,
+        body: payloadData.body,
+      },
+      data: payloadData,
+      android: {
+        priority: 'high',
+        notification: {
+          priority: 'max',
+          channelId: 'visitsafe_visitors',
+          defaultSound: true,
+          visibility: 'public',
+          clickAction: 'FLUTTER_NOTIFICATION_CLICK' // Standard for many frameworks, or handled by SW
+        }
+      },
+      webpush: {
+        headers: {
+          Urgency: 'high'
+        },
+        fcmOptions: {
+          link: payloadData.url || '/'
+        }
+      }
+    };
+
     let response;
     if (tokens.length === 1) {
       response = await admin.messaging().send({
         token: tokens[0],
-        data: payloadData,
+        ...messageConfig
       });
+      // Mark as sent
+      if (data?.requestId) {
+        await db.collection("residencies").doc(residencyId).collection("visitor_requests").doc(data.requestId).update({
+          notificationSent: true
+        });
+      }
       res.status(200).json({ success: true, id: response });
     } else {
       response = await admin.messaging().sendEachForMulticast({
         tokens,
-        data: payloadData,
+        ...messageConfig
       });
+      // Mark as sent if at least one success
+      if (response.successCount > 0 && data?.requestId) {
+        await db.collection("residencies").doc(residencyId).collection("visitor_requests").doc(data.requestId).update({
+          notificationSent: true
+        });
+      }
       res.status(200).json({
         success: true,
         sent: response.successCount,
@@ -113,6 +167,7 @@ export default async function handler(req, res) {
       });
     }
   } catch (error) {
+    console.error("Push send error:", error);
     res.status(500).json({ error: error.message });
   }
 }

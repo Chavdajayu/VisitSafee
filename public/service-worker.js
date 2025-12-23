@@ -88,37 +88,37 @@ self.addEventListener('fetch', event => {
 self.addEventListener('push', function(event) {
   try {
     const data = event.data ? event.data.json() : {};
-    const title = data.title || 'VisitSafe';
-    const body =
-      data.body ||
-      [
-        data.visitorName ? `👤 ${data.visitorName}` : null,
-        data.phone ? `📞 ${data.phone}` : null,
-        '',
-        (data.location || (data.flatNumber ? `Flat ${data.flatNumber}` : null)) ? `📍 ${data.location || `Flat ${data.flatNumber}`}` : null,
-        data.vehicle ? `🚗 ${data.vehicle}` : null,
-        data.purpose ? `📝 Purpose: ${data.purpose}` : null,
-        '',
-        data.status ? `⏳ ${data.status}` : null,
-      ]
-        .filter(Boolean)
-        .join('\n') || 'New visitor request';
+    const title = 'New Visitor Request';
+    
+    // Construct a professional card-style body
+    let body = '';
+    if (data.visitorName) body += `👤 ${data.visitorName}\n`;
+    if (data.phone) body += `📞 ${data.phone}\n`;
+    if (data.location) body += `📍 ${data.location}\n`;
+    if (data.purpose) body += `📝 ${data.purpose}`;
+    
+    // Fallback if empty
+    if (!body) body = data.body || 'You have a new visitor request.';
+
     const options = {
       body,
-      icon: '/favicon.ico',
-      badge: '/favicon.ico',
-      tag: data.requestId || undefined,
-      renotify: false,
-      requireInteraction: true,
+      icon: '/favicon.png', // Changed to png as seen in file list
+      badge: '/favicon.png',
+      tag: data.requestId || 'default-tag', // Use requestId to replace updates
+      renotify: true, // Renotify if the same request sends an update (e.g. reminder)
+      requireInteraction: true, // Keep it visible until user interacts
       data,
       actions: [
-        { action: 'approve', title: 'Approve' },
-        { action: 'reject', title: 'Reject' },
+        { action: 'approve', title: '✅ Approve' },
+        { action: 'reject', title: '❌ Reject' },
       ],
+      // Android specific
+      vibrate: [200, 100, 200],
     };
+    
     event.waitUntil(self.registration.showNotification(title, options));
   } catch (e) {
-    // ignore malformed payloads
+    console.error('Push handling error:', e);
   }
 });
 

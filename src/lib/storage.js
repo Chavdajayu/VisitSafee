@@ -621,16 +621,41 @@ class StorageService {
     if (!user) throw new Error("Not authenticated");
     const n = parseInt(count, 10);
     if (isNaN(n) || n < 1) throw new Error("Invalid block count");
-    const max = 26;
-    const target = Math.min(n, max);
+    
     const existing = await this.getBlocks(user.residencyId);
     const existingNames = new Set(existing.map(b => b.name));
-    const namesToCreate = [];
-    for (let i = 0; i < target; i++) {
-      const name = `Block ${String.fromCharCode(65 + i)}`;
-      if (!existingNames.has(name)) namesToCreate.push(name);
+    
+    // Find the highest existing letter index
+    let maxIndex = -1;
+    for (const name of existingNames) {
+      if (name.startsWith("Block ")) {
+        const letter = name.replace("Block ", "");
+        if (letter.length === 1) {
+          const code = letter.charCodeAt(0) - 65; // A=0, B=1...
+          if (code >= 0 && code < 26 && code > maxIndex) {
+            maxIndex = code;
+          }
+        }
+      }
     }
+
+    const namesToCreate = [];
+    let currentIndex = maxIndex + 1;
+    
+    for (let i = 0; i < n; i++) {
+      if (currentIndex >= 26) break; // Limit to Z
+      const name = `Block ${String.fromCharCode(65 + currentIndex)}`;
+      if (!existingNames.has(name)) {
+        namesToCreate.push(name);
+      } else {
+        // Should not happen if logic is correct, but safe guard
+        i--; 
+      }
+      currentIndex++;
+    }
+
     if (namesToCreate.length === 0) return [];
+    
     const batch = writeBatch(db);
     const results = [];
     for (const name of namesToCreate) {
@@ -641,6 +666,66 @@ class StorageService {
     await batch.commit();
     return results;
   }
+
+  async createFlatsBulk(blockId, floors, flatsPerFloor) {
+    const user = await this.getCurrentUser();
+    if (!user) throw new Error("Not authenticated");
+    
+    const numFloors = parseInt(floors, 10);
+    const numFlats = parseInt(flatsPerFloor, 10);
+    
+    if (isNaN(numFloors) || numFloors < 1) throw new Error("Invalid floors count");
+    if (isNaN(numFlats) || numFlats < 1) throw new Error("Invalid flats per floor count");
+
+    // Get target blocks
+    let targetBlocks = [];
+    if (blockId === "all") {
+       targetBlocks = await this.getBlocks(user.residencyId);
+    } else {
+       // Validate block exists or just use ID
+       targetBlocks = [{ id: blockId }]; 
+    }
+    
+    if (targetBlocks.length === 0) return [];
+
+    let batch = writeBatch(db);
+    let operationCount = 0;
+    const maxBatchSize = 450; 
+    
+    // Get all existing flats to avoid duplicates
+    const allFlatsSnap = await getDocs(collection(db, "residencies", user.residencyId, "flats"));
+    const existingFlats = new Set(allFlatsSnap.docs.map(d => `${d.data().blockId}-${d.data().number}`));
+
+    for (const block of targetBlocks) {
+       for (let f = 1; f <= numFloors; f++) {
+          for (let i = 1; i <= numFlats; i++) {
+             const flatNumber = `${f}${i.toString().padStart(2, '0')}`;
+             
+             const key = `${block.id}-${flatNumber}`;
+             if (existingFlats.has(key)) continue;
+
+             const ref = doc(collection(db, "residencies", user.residencyId, "flats"));
+             batch.set(ref, {
+               number: flatNumber,
+               blockId: block.id,
+               floor: f
+             });
+             
+             operationCount++;
+             if (operationCount % maxBatchSize === 0) {
+                await batch.commit();
+                batch = writeBatch(db); // Create new batch
+             }
+          }
+       }
+    }
+    
+    if (operationCount % maxBatchSize !== 0) {
+      await batch.commit();
+    }
+    return { count: operationCount };
+  }
+
 
   async createFlat(number, blockId, floor) {
     const user = await this.getCurrentUser();
