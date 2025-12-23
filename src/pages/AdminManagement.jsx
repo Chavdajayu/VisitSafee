@@ -774,22 +774,24 @@ function BulkResidentForm({ onCancel, onSuccess }) {
         formData.append("file", file);
         formData.append("residencyId", user.residencyId);
 
-        const response = await fetch("/api/upload-residents-pdf", {
+        // Updated API Endpoint
+        const response = await fetch("/api/uploadResidentsFromPDF", {
            method: "POST",
            body: formData,
         });
 
+        // "ANTI-Unexpected token" Response Handling
         const text = await response.text();
         let res;
         try {
            res = JSON.parse(text);
         } catch {
            console.error("Server returned non-JSON:", text);
-           throw new Error("Server returned invalid response");
+           throw new Error("Server returned invalid response (HTML/Text). Check logs.");
         }
         
-        if (!response.ok) {
-           throw new Error(res.error || "Failed to process PDF");
+        if (!response.ok || !res.success) {
+           throw new Error(res.message || res.error || "Failed to process PDF");
         }
 
         setResult(res);
