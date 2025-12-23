@@ -1,7 +1,7 @@
 import admin from "firebase-admin";
 import formidable from "formidable";
 import fs from "fs";
-import { PDFParse } from "pdf-parse";
+import pdfParse from "pdf-parse";
 import bcrypt from "bcryptjs";
 
 export const config = {
