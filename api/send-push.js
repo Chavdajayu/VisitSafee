@@ -99,14 +99,18 @@ export default async function handler(req, res) {
     }
 
     const payloadData = {
-      ...(data || {}),
-      title: title || "New Visitor",
-      body: body || "You have a new visitor request.",
       requestId: data?.requestId || "",
-      residencyId,
-      flatId: String(flatId || data?.flatId || ""),
-      flatNumber: flatNumber ? String(flatNumber) : "",
-      location: blockName && flatNumber ? `${blockName} • Flat ${flatNumber}` : (flatNumber ? `Flat ${flatNumber}` : ""),
+      residencyId: residencyId,
+      visitorName: data?.visitorName || "",
+      phone: data?.phone || data?.visitorPhone || "",
+      vehicle: data?.vehicle || data?.vehicleNumber || "",
+      purpose: data?.purpose || "",
+      block: blockName || "",
+      flat: flatNumber ? String(flatNumber) : "",
+      username: userId || data?.username || "",
+      title: title || "New Visitor Request",
+      body: body || `${data?.visitorName || 'Someone'} wants to visit Flat ${flatNumber || ''}`,
+      url: data?.url || '/',
     };
 
     // 3. Message Config for Background/Closed App Functionality
@@ -123,7 +127,7 @@ export default async function handler(req, res) {
           channelId: 'visitsafe_visitors',
           defaultSound: true,
           visibility: 'public',
-          clickAction: 'FLUTTER_NOTIFICATION_CLICK' // Standard for many frameworks, or handled by SW
+          clickAction: 'FLUTTER_NOTIFICATION_CLICK'
         }
       },
       webpush: {

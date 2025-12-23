@@ -131,20 +131,19 @@ self.addEventListener('notificationclick', function(event) {
   notification.close();
 
   if (action === 'approve' || action === 'reject') {
-    const promise = fetch('/api/update-request-status', {
+    const promise = fetch(`/api/visitor-action?action=${action}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         residencyId: data.residencyId,
         requestId: data.requestId,
-        status: action === 'approve' ? 'approved' : 'rejected',
         username: data.username
       })
     }).then(async (resp) => {
       if (!resp.ok) throw new Error('Status update failed');
       return self.registration.showNotification('VisitSafe', {
         body: `Visitor request ${action === 'approve' ? 'approved' : 'rejected'}.`,
-        icon: '/favicon.ico'
+        icon: '/favicon.png'
       });
     }).catch(err => {
       console.error('Error updating status:', err);

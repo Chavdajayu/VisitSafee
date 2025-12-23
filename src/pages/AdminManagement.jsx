@@ -26,11 +26,7 @@ import {
   Plus, Loader2, Users, Building2, Home, Shield, UserCog, User,
   Search, Filter, Trash2, ShieldAlert, MoreVertical, FileText, Upload, CheckCircle, AlertCircle 
 } from "lucide-react";
-import * as pdfjsLib from 'pdfjs-dist';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-// Configure PDF worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 import { storage } from "@/lib/storage";
 
 export default function AdminManagement() {
@@ -771,37 +767,24 @@ function BulkResidentForm({ onCancel, onSuccess }) {
      if (!file) return;
      setIsProcessing(true);
      try {
-        const buffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument(buffer).promise;
-        let fullText = "";
-        for (let i = 1; i <= pdf.numPages; i++) {
-           const page = await pdf.getPage(i);
-           const content = await page.getTextContent();
-           const strings = content.items.map(item => item.str);
-           fullText += strings.join(" ") + "\n";
-        }
+        const user = await storage.getCurrentUser();
+        if (!user || !user.residencyId) throw new Error("User session invalid");
+
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("residencyId", user.residencyId);
+
+        const response = await fetch("/api/upload-residents-pdf", {
+           method: "POST",
+           body: formData,
+        });
+
+        const res = await response.json();
         
-        const lines = fullText.split(/\r?\n/).filter(l => l.trim().length > 0);
-        const entries = [];
-        
-        for (const line of lines) {
-           const regex = /Block\s+(.+?)\s+(\d+)\s+(.+?)(?:\s+(\+?[\d\s\-]+))?$/i;
-           const match = line.match(regex);
-           if (match) {
-              entries.push({
-                 blockName: match[1].trim(),
-                 flatNumber: match[2].trim(),
-                 name: match[3].trim(),
-                 phone: match[4] ? match[4].trim() : null
-              });
-           }
+        if (!response.ok) {
+           throw new Error(res.error || "Failed to process PDF");
         }
 
-        if (entries.length === 0) {
-           throw new Error("No valid entries found in PDF. Ensure format: Block [Name] [Flat] [Name] [Phone]");
-        }
-
-        const res = await storage.createResidentsBulk(entries);
         setResult(res);
         if (onSuccess) onSuccess();
 

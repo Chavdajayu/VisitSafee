@@ -5,6 +5,7 @@ import {
 import { db } from "./firebase";
 import { signOut } from "firebase/auth";
 import { auth } from "./firebase";
+import bcrypt from "bcryptjs";
 
 const getEmail = (username, residencyId) => {
   return `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}.${residencyId}@visitsafe.local`;
@@ -83,7 +84,16 @@ class StorageService {
     if (residentSnap.exists()) {
        const userData = residentSnap.data(); 
        
-       if (userData.password !== password) {
+       let isValid = userData.password === password;
+       if (!isValid) {
+          try {
+             isValid = await bcrypt.compare(password, userData.password);
+          } catch (e) {
+             isValid = false;
+          }
+       }
+
+       if (!isValid) {
          throw new Error("Invalid credentials");
        }
 
