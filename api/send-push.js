@@ -35,12 +35,17 @@ export default async function handler(req, res) {
 
     const db = admin.firestore();
     let tokens = [];
+    let flatNumber;
 
     if (userId) {
       const userDoc = await db.collection("residencies").doc(residencyId).collection("residents").doc(userId).get();
       if (userDoc.exists) {
         const u = userDoc.data();
         if (u.fcmToken) tokens.push(u.fcmToken);
+        if (u.flatId) {
+          const flatDoc = await db.collection("residencies").doc(residencyId).collection("flats").doc(String(u.flatId)).get();
+          if (flatDoc.exists) flatNumber = flatDoc.data()?.number;
+        }
       }
     } else if (flatId) {
       const residentsRef = db.collection("residencies").doc(residencyId).collection("residents");
@@ -51,6 +56,8 @@ export default async function handler(req, res) {
           tokens.push(userData.fcmToken);
         }
       });
+      const flatDoc = await db.collection("residencies").doc(residencyId).collection("flats").doc(String(flatId)).get();
+      if (flatDoc.exists) flatNumber = flatDoc.data()?.number;
     } else {
       res.status(400).json({ error: "Provide userId or flatId" });
       return;
@@ -61,40 +68,27 @@ export default async function handler(req, res) {
       return;
     }
 
-    const base = {
-      notification: {
-        title: title || "New Visitor",
-        body: body || "You have a new visitor request.",
-      },
-      data: data || {},
-      android: {
-        priority: "high",
-        notification: {
-          priority: "max",
-          channelId: "visitsafe_visitors",
-          defaultSound: true,
-          visibility: "public",
-        },
-      },
-      webpush: {
-        headers: { Urgency: "high" },
-        fcmOptions: {
-          link: (data && data.url) || "/",
-        },
-      },
+    const payloadData = {
+      ...(data || {}),
+      title: title || "New Visitor",
+      body: body || "You have a new visitor request.",
+      requestId: data?.requestId || "",
+      residencyId,
+      flatId: String(flatId || data?.flatId || ""),
+      flatNumber: flatNumber ? String(flatNumber) : "",
     };
 
     let response;
     if (tokens.length === 1) {
       response = await admin.messaging().send({
-        ...base,
         token: tokens[0],
+        data: payloadData,
       });
       res.status(200).json({ success: true, id: response });
     } else {
       response = await admin.messaging().sendEachForMulticast({
-        ...base,
         tokens,
+        data: payloadData,
       });
       res.status(200).json({
         success: true,

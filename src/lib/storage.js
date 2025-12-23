@@ -347,7 +347,10 @@ class StorageService {
               url: `/${societyPath}/resident`,
               requestId: docRef.id,
               residencyId: residencyId,
-              username: 'system' 
+              username: 'system',
+              visitorName: data.visitorName,
+              phone: data.visitorPhone,
+              flatId: data.flatId
             }
           })
         }).catch(err => console.warn("Background push trigger failed:", err));

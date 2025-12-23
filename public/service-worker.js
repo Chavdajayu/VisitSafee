@@ -85,47 +85,30 @@ self.addEventListener('fetch', event => {
   );
 });
 
-// Firebase Messaging Background Handler
-messaging.onBackgroundMessage(function(payload) {
-  console.log('[firebase-messaging-sw.js] Received background message ', payload);
-  
-  // Customize notification here
-  const notificationTitle = payload.notification?.title || payload.data?.title || 'VisitSafe';
-  const notificationOptions = {
-    ...payload.notification,
-    body: payload.notification?.body || payload.data?.body,
-    icon: '/favicon.ico',
-    badge: '/favicon.ico',
-    data: payload.data || {},
-    actions: []
-  };
-
-  // If data contains necessary IDs, add actions
-  if (notificationOptions.data.requestId && notificationOptions.data.residencyId && notificationOptions.data.username) {
-      notificationOptions.actions = [
-          { action: 'approve', title: 'Approve' },
-          { action: 'reject', title: 'Reject' }
-      ];
-  }
-
-  // URL handling
-  if (!notificationOptions.data.url) {
-      notificationOptions.data.url = payload.fcmOptions?.link || payload.data?.click_action || '/';
-  }
-
-  self.registration.showNotification(notificationTitle, notificationOptions);
-});
-
-// Generic Push event fallback (ensures display when app is closed)
 self.addEventListener('push', function(event) {
   try {
     const data = event.data ? event.data.json() : {};
-    const title = data.notification?.title || data.title || 'VisitSafe';
+    const title = data.title || 'VisitSafe';
+    const body =
+      data.body ||
+      [
+        data.visitorName ? `👤 ${data.visitorName}` : null,
+        data.flatNumber ? `🏠 Flat ${data.flatNumber}` : null,
+        data.phone ? `📞 ${data.phone}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n') || 'New visitor request';
     const options = {
-      body: data.notification?.body || data.body,
+      body,
       icon: '/favicon.ico',
       badge: '/favicon.ico',
-      data: data.data || {},
+      tag: data.requestId || undefined,
+      renotify: false,
+      data,
+      actions: [
+        { action: 'approve', title: 'Approve' },
+        { action: 'reject', title: 'Reject' },
+      ],
     };
     event.waitUntil(self.registration.showNotification(title, options));
   } catch (e) {

@@ -72,26 +72,16 @@ export function NotificationManager() {
 
     requestPermission();
 
-    // Foreground notifications: show a native notification when app is open
-    // FCM doesn't display notifications automatically in foreground
+    // Foreground messages: use toast only to avoid duplicate native notifications
     if (messaging) {
       const unsubscribe = onMessage(messaging, async (payload) => {
         try {
-          const registration = await navigator.serviceWorker.ready;
-          const title = payload.notification?.title || payload.data?.title || 'VisitSafe';
-          const options = {
-            body: payload.notification?.body || payload.data?.body,
-            icon: '/favicon.ico',
-            badge: '/favicon.ico',
-            data: payload.data || {},
-          };
-          await registration.showNotification(title, options);
-        } catch (e) {
-          // Fallback to toast if Notification API not available
           toast({
-            title: payload.notification?.title || 'VisitSafe',
-            description: payload.notification?.body || 'New notification',
+            title: payload.data?.title || 'VisitSafe',
+            description: payload.data?.body || 'New notification',
           });
+        } catch (e) {
+          // ignore
         }
       });
       return () => unsubscribe();
