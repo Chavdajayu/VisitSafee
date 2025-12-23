@@ -1,6 +1,6 @@
 import { 
   collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, 
-  query, where, orderBy, onSnapshot, deleteDoc, limit 
+  query, where, orderBy, onSnapshot, deleteDoc, limit, serverTimestamp
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { signOut } from "firebase/auth";
@@ -335,7 +335,7 @@ class StorageService {
         // If residencyName is missing, deep link might default to root or need handling
         const societyPath = residencyName ? encodeURIComponent(residencyName) : 'society';
         
-        fetch('/.netlify/functions/send-push', {
+        fetch('/api/send-push', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -350,7 +350,7 @@ class StorageService {
               username: 'system' 
             }
           })
-        }).catch(err => console.warn("Background push trigger failed (expected in dev without netlify functions):", err));
+        }).catch(err => console.warn("Background push trigger failed:", err));
       }
     } catch (e) {
       console.warn("Error triggering push notification:", e);
@@ -721,11 +721,11 @@ class StorageService {
     try {
       if (user.role === 'admin') {
         const residencyRef = doc(db, "residencies", user.residencyId);
-        await updateDoc(residencyRef, { adminFcmToken: token });
+        await updateDoc(residencyRef, { adminFcmToken: token, updatedAt: serverTimestamp() });
       } else {
         const collectionName = user.role === 'guard' ? 'guards' : 'residents';
         const userRef = doc(db, "residencies", user.residencyId, collectionName, user.username);
-        await updateDoc(userRef, { fcmToken: token });
+        await updateDoc(userRef, { fcmToken: token, updatedAt: serverTimestamp() });
       }
       console.log('FCM Token saved for user:', user.username);
     } catch (error) {

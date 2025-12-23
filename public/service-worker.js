@@ -116,6 +116,23 @@ messaging.onBackgroundMessage(function(payload) {
   self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
+// Generic Push event fallback (ensures display when app is closed)
+self.addEventListener('push', function(event) {
+  try {
+    const data = event.data ? event.data.json() : {};
+    const title = data.notification?.title || data.title || 'VisitSafe';
+    const options = {
+      body: data.notification?.body || data.body,
+      icon: '/favicon.ico',
+      badge: '/favicon.ico',
+      data: data.data || {},
+    };
+    event.waitUntil(self.registration.showNotification(title, options));
+  } catch (e) {
+    // ignore malformed payloads
+  }
+});
+
 // Notification Click Handler
 self.addEventListener('notificationclick', function(event) {
   const notification = event.notification;
