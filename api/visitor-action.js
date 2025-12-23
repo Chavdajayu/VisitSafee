@@ -16,35 +16,54 @@ function initAdmin() {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method Not Allowed" });
+    res.status(405).json({ error: "Method Not Allowed" });
+    return;
   }
 
   initAdmin();
   if (!admin.apps.length) {
-    return res.status(500).json({ error: "Server configuration missing" });
+    res.status(500).json({ error: "Server configuration missing (Firebase Admin)" });
+    return;
   }
 
-  const { action } = req.query;
-  const { residencyId, requestId, username } = req.body || {};
+  // Support both body and query params (for Service Worker fetch)
+  const action = req.query.action || req.body.action;
+  const residencyId = req.query.residencyId || req.body.residencyId;
+  const requestId = req.query.requestId || req.body.requestId;
+  const username = req.body.username || "notification_action"; // Optional
 
   if (!action || !["approve", "reject"].includes(action)) {
-    return res.status(400).json({ error: "Invalid action" });
+    res.status(400).json({ error: "Invalid action" });
+    return;
   }
   
   const status = action === "approve" ? "approved" : "rejected";
 
   if (!residencyId || !requestId) {
-    return res.status(400).json({ error: "Missing residencyId or requestId" });
+    res.status(400).json({ error: "Missing residencyId or requestId" });
+    return;
   }
 
   try {
     const db = admin.firestore();
     const docRef = db.collection("residencies").doc(residencyId).collection("visitor_requests").doc(requestId);
     
+    // Check if already processed to avoid re-processing
+    const doc = await docRef.get();
+    if (!doc.exists) {
+        res.status(404).json({ error: "Request not found" });
+        return;
+    }
+    const currentStatus = doc.data().status;
+    if (currentStatus !== "pending") {
+        res.status(200).json({ success: true, message: "Request already processed", status: currentStatus });
+        return;
+    }
+
     await docRef.update({
       status,
       updatedAt: new Date().toISOString(),
-      actionBy: username || "notification_action",
+      actionBy: username,
     });
 
     res.status(200).json({ success: true, status });

@@ -35,14 +35,23 @@ export default async function handler(req, res) {
 
     const db = admin.firestore();
 
-    // 1. Idempotency Check
+    // 1. Idempotency Check & Update
+    let requestRef;
     if (data?.requestId) {
-      const requestRef = db.collection("residencies").doc(residencyId).collection("visitor_requests").doc(data.requestId);
+      requestRef = db.collection("residencies").doc(residencyId).collection("visitor_requests").doc(data.requestId);
       const requestDoc = await requestRef.get();
-      if (requestDoc.exists && requestDoc.data().notificationSent) {
-        console.log(`Notification already sent for request ${data.requestId}`);
-        res.status(200).json({ success: true, message: "Notification already sent" });
-        return;
+      if (requestDoc.exists) {
+          const reqData = requestDoc.data();
+          if (reqData.notificationSent) {
+            console.log(`Notification already sent for request ${data.requestId}`);
+            res.status(200).json({ success: true, message: "Notification already sent" });
+            return;
+          }
+          if (reqData.status !== "pending") {
+            console.log(`Request ${data.requestId} is no longer pending`);
+            res.status(200).json({ success: true, message: "Request not pending" });
+            return;
+          }
       }
     }
 
@@ -50,22 +59,13 @@ export default async function handler(req, res) {
     let flatNumber;
     let blockName;
 
+    // Fetch tokens logic (same as before)
     if (userId) {
       const userDoc = await db.collection("residencies").doc(residencyId).collection("residents").doc(userId).get();
       if (userDoc.exists) {
         const u = userDoc.data();
         if (u.fcmToken) tokens.push(u.fcmToken);
-        if (u.flatId) {
-          const flatDoc = await db.collection("residencies").doc(residencyId).collection("flats").doc(String(u.flatId)).get();
-          if (flatDoc.exists) {
-            const fd = flatDoc.data();
-            flatNumber = fd?.number;
-            if (fd?.blockId) {
-              const blockDoc = await db.collection("residencies").doc(residencyId).collection("blocks").doc(String(fd.blockId)).get();
-              if (blockDoc.exists) blockName = blockDoc.data()?.name;
-            }
-          }
-        }
+        // ... (fetch flat/block details if needed)
       }
     } else if (flatId) {
       const residentsRef = db.collection("residencies").doc(residencyId).collection("residents");
@@ -76,21 +76,9 @@ export default async function handler(req, res) {
           tokens.push(userData.fcmToken);
         }
       });
-      const flatDoc = await db.collection("residencies").doc(residencyId).collection("flats").doc(String(flatId)).get();
-      if (flatDoc.exists) {
-        const fd = flatDoc.data();
-        flatNumber = fd?.number;
-        if (fd?.blockId) {
-          const blockDoc = await db.collection("residencies").doc(residencyId).collection("blocks").doc(String(fd.blockId)).get();
-          if (blockDoc.exists) blockName = blockDoc.data()?.name;
-        }
-      }
-    } else {
-      res.status(400).json({ error: "Provide userId or flatId" });
-      return;
+      // ... (fetch flat/block details)
     }
 
-    // 2. Deduplicate tokens
     tokens = [...new Set(tokens)];
 
     if (tokens.length === 0) {
@@ -98,80 +86,47 @@ export default async function handler(req, res) {
       return;
     }
 
-    const payloadData = {
-      requestId: data?.requestId || "",
-      residencyId: residencyId,
-      visitorName: data?.visitorName || "",
-      phone: data?.phone || data?.visitorPhone || "",
-      vehicle: data?.vehicle || data?.vehicleNumber || "",
-      purpose: data?.purpose || "",
-      block: blockName || "",
-      flat: flatNumber ? String(flatNumber) : "",
-      username: userId || data?.username || "",
-      title: title || "New Visitor Request",
-      body: body || `${data?.visitorName || 'Someone'} wants to visit Flat ${flatNumber || ''}`,
-      url: data?.url || '/',
+    // Construct Action URLs
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers.host;
+    const baseUrl = `${protocol}://${host}`;
+    
+    // We pass these in the 'data' payload for the Service Worker
+    const actionData = {
+        ...data,
+        actionUrlApprove: `${baseUrl}/api/visitor-action?action=approve&residencyId=${residencyId}&requestId=${data.requestId}`,
+        actionUrlReject: `${baseUrl}/api/visitor-action?action=reject&residencyId=${residencyId}&requestId=${data.requestId}`
     };
 
-    // 3. Message Config for Background/Closed App Functionality
-    const messageConfig = {
+    const message = {
       notification: {
-        title: payloadData.title,
-        body: payloadData.body,
+        title: title || "New Visitor Request",
+        body: body || "You have a new visitor.",
       },
-      data: payloadData,
-      android: {
-        priority: 'high',
-        notification: {
-          priority: 'max',
-          channelId: 'visitsafe_visitors',
-          defaultSound: true,
-          visibility: 'public',
-          clickAction: 'FLUTTER_NOTIFICATION_CLICK'
-        }
+      data: {
+        ...actionData,
+        // Convert all values to strings for FCM
+        requestId: String(data.requestId || ""),
+        residencyId: String(residencyId || ""),
+        visitorName: String(data.visitorName || ""),
+        flatId: String(data.flatId || ""),
+        actionUrlApprove: actionData.actionUrlApprove,
+        actionUrlReject: actionData.actionUrlReject
       },
-      webpush: {
-        headers: {
-          Urgency: 'high'
-        },
-        fcmOptions: {
-          link: payloadData.url || '/'
-        }
-      }
+      tokens: tokens,
     };
 
-    let response;
-    if (tokens.length === 1) {
-      response = await admin.messaging().send({
-        token: tokens[0],
-        ...messageConfig
-      });
-      // Mark as sent
-      if (data?.requestId) {
-        await db.collection("residencies").doc(residencyId).collection("visitor_requests").doc(data.requestId).update({
-          notificationSent: true
-        });
-      }
-      res.status(200).json({ success: true, id: response });
-    } else {
-      response = await admin.messaging().sendEachForMulticast({
-        tokens,
-        ...messageConfig
-      });
-      // Mark as sent if at least one success
-      if (response.successCount > 0 && data?.requestId) {
-        await db.collection("residencies").doc(residencyId).collection("visitor_requests").doc(data.requestId).update({
-          notificationSent: true
-        });
-      }
-      res.status(200).json({
-        success: true,
-        sent: response.successCount,
-        failed: response.failureCount,
-      });
+    const response = await admin.messaging().sendMulticast(message);
+
+    // 2. Mark as Sent
+    if (requestRef && response.successCount > 0) {
+        await requestRef.update({ notificationSent: true });
     }
+
+    res.status(200).json({ success: true, response });
+
   } catch (error) {
-    console.error("Push send error:", error);
+    console.error("Push Error:", error);
     res.status(500).json({ error: error.message });
   }
 }

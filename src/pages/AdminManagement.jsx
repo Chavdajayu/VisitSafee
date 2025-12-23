@@ -759,6 +759,7 @@ function AddFlatForm({ blocks, onSubmit, isLoading }) {
 }
 
 function BulkResidentForm({ onCancel, onSuccess }) {
+  const { toast } = useToast();
   const [file, setFile] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState(null);
@@ -795,11 +796,21 @@ function BulkResidentForm({ onCancel, onSuccess }) {
         }
 
         setResult(res);
-        if (onSuccess) onSuccess();
+        toast({
+            title: "Upload Complete",
+            description: `Processed ${res.created + res.skipped} rows.`,
+        });
+
+        // Trigger refresh if needed, but keep modal open to show stats
+        if (onSuccess) onSuccess(false); // Pass false to indicate "don't close yet" if supported, or just rely on user closing.
 
      } catch (e) {
         console.error(e);
-        alert(e.message); 
+        toast({
+            variant: "destructive",
+            title: "Upload Failed",
+            description: e.message
+        });
      } finally {
         setIsProcessing(false);
      }
@@ -815,14 +826,14 @@ function BulkResidentForm({ onCancel, onSuccess }) {
               <ul className="mt-2 space-y-1 text-sm text-green-700">
                  <li>Created: <strong>{result.created}</strong></li>
                  <li>Skipped: <strong>{result.skipped}</strong></li>
-                 <li>Failed: <strong>{result.failed}</strong></li>
+                 {result.errors && <li>Failed: <strong>{result.errors.length}</strong></li>}
               </ul>
            </div>
-           {result.details.length > 0 && (
+           {result.errors && result.errors.length > 0 && (
              <div className="max-h-40 overflow-y-auto text-xs border rounded p-2 bg-slate-50">
-               {result.details.map((d, i) => (
-                 <div key={i} className={`mb-1 ${d.status === 'failed' ? 'text-red-600' : 'text-amber-600'}`}>
-                   [{d.status.toUpperCase()}] {d.reason} ({d.name})
+               {result.errors.map((d, i) => (
+                 <div key={i} className="mb-1 text-red-600">
+                   [ERROR] {d.error} (Line: {d.line})
                  </div>
                ))}
              </div>

@@ -1,7 +1,7 @@
 import admin from "firebase-admin";
 import formidable from "formidable";
 import fs from "fs";
-import pdf from "pdf-parse";
+import pdfParse from "pdf-parse/lib/pdf-parse.js"; // ✅ CORRECT IMPORT
 import bcrypt from "bcryptjs";
 
 export const config = {
@@ -77,11 +77,11 @@ export default async function handler(req, res) {
         return;
     }
 
-    // 🔥 PDF PARSING WRAPPED
+    // 🔥 PDF PARSING WRAPPED (SERVER-SIDE ONLY)
     let pdfText = "";
     try {
       const buffer = fs.readFileSync(file.filepath);
-      const parsed = await pdf(buffer);
+      const parsed = await pdfParse(buffer);
       pdfText = parsed.text || "";
     } catch (pdfError) {
       res.status(400).json({ 
@@ -99,156 +99,129 @@ export default async function handler(req, res) {
 
     let created = 0;
     let skipped = 0;
+    const batch = db.batch();
     const errors = [];
-    const maxBatchSize = 450;
-    let batch = db.batch();
-    let batchCount = 0;
 
-    // Fetch reference data for validation
-    // 🔥 ASYNC DATA FETCH WRAPPED
-    let blocks, flats, occupiedFlatIds, existingUsernames, residencyRef;
-    try {
-        residencyRef = db.collection("residencies").doc(residencyId);
-        const [blocksSnap, flatsSnap, residentsSnap] = await Promise.all([
-            residencyRef.collection("blocks").get(),
-            residencyRef.collection("flats").get(),
-            residencyRef.collection("residents").get()
-        ]);
+    // Helper to hash password
+    const hashPassword = async (pwd) => {
+        return await bcrypt.hash(pwd, 10);
+    };
 
-        blocks = blocksSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        flats = flatsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        occupiedFlatIds = new Set(residentsSnap.docs.map(d => d.data().flatId));
-        existingUsernames = new Set(residentsSnap.docs.map(d => d.data().username));
-    } catch (dbError) {
-        res.status(500).json({ success: false, message: "Database fetch failed", error: dbError.message });
-        return;
-    }
-
-    // 🔥 ROW PROCESSING LOOP
+    // Process lines (Simple heuristic: Block Flat Phone Name)
+    // Adjust regex based on expected PDF format
+    // Example: "A 101 9876543210 John Doe"
     for (const line of lines) {
-      try {
-        // Robust Parsing Logic (Preserved from previous success)
-        let parts = line.split(/\s+/);
-        
-        if (parts.length > 0 && parts[0].toLowerCase() === 'block') {
-            parts.shift();
-        }
+        // Skip headers or short lines
+        if (line.length < 5 || line.toLowerCase().includes("block")) continue;
 
+        const parts = line.split(/\s+/);
         if (parts.length < 3) {
-            continue; 
+            skipped++;
+            continue;
         }
 
-        const blockName = parts[0];
-        const flatNumber = parts[1];
-        const nameStart = parts[2];
+        // Heuristic: First part is Block, Second is Flat, Third is Phone?
+        // OR: Flat Phone Name?
+        // Let's assume user provides a standard format or we try to guess.
+        // For robustness, let's look for a phone number pattern.
         
-        // Simple heuristic for prompt compatibility + robustness
-        // Format: Block Flat Name... Phone?
-        
-        let residentName = nameStart; 
-        let phoneRaw = null;
-
-        // Try to identify phone at end
-        if (parts.length > 3) {
-             const lastPart = parts[parts.length - 1];
-             if (/^(\+?[\d\-\s]+)$/.test(lastPart) && lastPart.replace(/\D/g, '').length > 5) {
-                 phoneRaw = lastPart;
-                 residentName = parts.slice(2, parts.length - 1).join(" ");
-             } else {
-                 residentName = parts.slice(2).join(" ");
-             }
-        } else {
-            // Just 3 parts: Block Flat Name
-            residentName = parts[2];
-        }
-
-        // Validation
-        const block = blocks.find(b => b.name.toLowerCase() === blockName.toLowerCase());
-        if (!block) {
-            skipped++;
-            continue;
-        }
-
-        const flat = flats.find(f => f.blockId === block.id && f.number === flatNumber.toString());
-        if (!flat) {
-            skipped++;
-            errors.push(`Flat ${blockName}-${flatNumber} not found`);
-            continue;
-        }
-
-        if (occupiedFlatIds.has(flat.id)) {
-            skipped++;
-            errors.push(`Flat ${blockName}-${flatNumber} occupied`);
-            continue;
-        }
-
-        // Username & Password
-        const username = residentName.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (existingUsernames.has(username)) {
-             skipped++;
-             errors.push(`Username ${username} taken`);
+        const phoneIndex = parts.findIndex(p => /^\d{10}$/.test(p));
+        if (phoneIndex === -1) {
+             skipped++; // No valid phone found
              continue;
         }
 
-        let phone = null;
-        if (phoneRaw) {
-             phone = phoneRaw.replace(/\D/g, "");
-        }
-
-        const passwordRaw = residentName.slice(0, 4).toLowerCase() + (phone ? phone.slice(-2) : "00");
-        const hashedPassword = await bcrypt.hash(passwordRaw, 10);
-
-        // Firestore Write (Preserving correct schema: residencies/{id}/residents)
-        const ref = residencyRef.collection("residents").doc(username);
-        batch.set(ref, {
-          username,
-          password: hashedPassword,
-          phone: phone ? `+91${phone}` : null,
-          flatId: flat.id,
-          active: true,
-          createdAt: new Date().toISOString(),
-          uploadedFromPdf: true
-        });
-
-        existingUsernames.add(username);
-        occupiedFlatIds.add(flat.id);
+        // Assuming: [Block] [Flat] [Phone] [Name...]
+        // If phone is at index 2: A 101 9999999999 Name
+        // If phone is at index 1: 101 9999999999 Name (Block implied?)
         
-        created++;
-        batchCount++;
+        let blockName = "A"; // Default
+        let flatNumber = "";
+        let phone = parts[phoneIndex];
+        let name = parts.slice(phoneIndex + 1).join(" ");
 
-        if (batchCount >= maxBatchSize) {
-            await batch.commit();
-            batch = db.batch();
-            batchCount = 0;
+        if (phoneIndex === 2) {
+            blockName = parts[0];
+            flatNumber = parts[1];
+        } else if (phoneIndex === 1) {
+            flatNumber = parts[0];
+        } else {
+            // Unclear format
+            skipped++;
+            continue;
         }
 
-      } catch (rowErr) {
-        skipped++;
-        errors.push(rowErr.message);
-      }
+        if (!flatNumber || !phone || !name) {
+            skipped++;
+            continue;
+        }
+
+        // Validate duplicates (Flat + Phone)
+        // Since we are in a batch, we can't easily check Firestore *inside* the transaction for every row efficiently without reading all first.
+        // For safety, we use a deterministic ID: residencyId_flat_phone
+        
+        const userId = `${residencyId}_${flatNumber}_${phone}`;
+        const userRef = db.collection("residencies").doc(residencyId).collection("residents").doc(userId);
+        
+        // We will overwrite or merge. Let's merge to be safe.
+        // We also need Auth user. But we can't create Auth user in batch.
+        // So we create Firestore doc only here. Auth user creation should ideally happen via a separate process or we accept that bulk upload creates Firestore records first.
+        // Wait, the prompt says "create Firebase Auth users".
+        // We CANNOT create Auth users in a batch. We have to do it one by one.
+        // If we do it one by one, it might timeout for large files.
+        // But for < 500 records, it might be okay.
+        
+        try {
+             // Create Auth User
+             let userRecord;
+             try {
+                 userRecord = await admin.auth().getUserByPhoneNumber(`+91${phone}`);
+             } catch (e) {
+                 if (e.code === 'auth/user-not-found') {
+                     userRecord = await admin.auth().createUser({
+                         phoneNumber: `+91${phone}`,
+                         displayName: name,
+                         password: "password123" // Temporary password
+                     });
+                 } else {
+                     throw e; // Other error
+                 }
+             }
+
+             // Add to Batch
+             batch.set(userRef, {
+                 uid: userRecord.uid,
+                 name,
+                 phone,
+                 flatNumber,
+                 blockName,
+                 role: "resident",
+                 residencyId,
+                 createdAt: admin.firestore.FieldValue.serverTimestamp()
+             }, { merge: true });
+
+             created++;
+        } catch (err) {
+             console.error(`Failed to create user ${phone}:`, err);
+             errors.push({ line, error: err.message });
+             skipped++;
+        }
     }
 
-    if (batchCount > 0) {
+    if (created > 0) {
         await batch.commit();
     }
 
-    // 🔥 FINAL SUCCESS RESPONSE
     res.status(200).json({
-      success: true,
-      created,
-      skipped,
-      errors,
+        success: true,
+        created,
+        skipped,
+        errors,
+        message: `Processed ${created + skipped} rows. Created: ${created}, Skipped: ${skipped}`
     });
-    return;
 
-  } catch (fatal) {
-    // 🔥 LAST-RESORT SAFETY NET
-    console.error("Fatal API Error:", fatal);
-    res.status(500).json({
-      success: false,
-      message: "Server crashed but JSON response preserved",
-      error: fatal?.message || "Unknown error",
-    });
-    return;
+  } catch (err) {
+    console.error("Critical Upload Error:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error", error: err.message });
   }
 }
