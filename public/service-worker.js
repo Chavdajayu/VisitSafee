@@ -93,8 +93,13 @@ self.addEventListener('push', function(event) {
       data.body ||
       [
         data.visitorName ? `👤 ${data.visitorName}` : null,
-        data.flatNumber ? `🏠 Flat ${data.flatNumber}` : null,
         data.phone ? `📞 ${data.phone}` : null,
+        '',
+        (data.location || (data.flatNumber ? `Flat ${data.flatNumber}` : null)) ? `📍 ${data.location || `Flat ${data.flatNumber}`}` : null,
+        data.vehicle ? `🚗 ${data.vehicle}` : null,
+        data.purpose ? `📝 Purpose: ${data.purpose}` : null,
+        '',
+        data.status ? `⏳ ${data.status}` : null,
       ]
         .filter(Boolean)
         .join('\n') || 'New visitor request';
@@ -104,6 +109,7 @@ self.addEventListener('push', function(event) {
       badge: '/favicon.ico',
       tag: data.requestId || undefined,
       renotify: false,
+      requireInteraction: true,
       data,
       actions: [
         { action: 'approve', title: 'Approve' },
@@ -161,16 +167,26 @@ self.addEventListener('notificationclick', function(event) {
                     // Focus the client
                     return client.focus().then(focusedClient => {
                         // Navigate to the specific URL if needed
-                        if (focusedClient.url !== data.url && data.url) {
-                             return focusedClient.navigate(data.url);
+                        let targetUrl = data.url || '/';
+                        if (data.requestId) {
+                          const hasQuery = targetUrl.includes('?');
+                          targetUrl = `${targetUrl}${hasQuery ? '&' : '?'}requestId=${encodeURIComponent(data.requestId)}`;
+                        }
+                        if (focusedClient.url !== targetUrl && targetUrl) {
+                             return focusedClient.navigate(targetUrl);
                         }
                         return focusedClient;
                     });
                 }
             }
             // If no window is open, open a new one
-            if (clients.openWindow && data.url) {
-                return clients.openWindow(data.url);
+            if (clients.openWindow) {
+                let targetUrl = data.url || '/';
+                if (data.requestId) {
+                  const hasQuery = targetUrl.includes('?');
+                  targetUrl = `${targetUrl}${hasQuery ? '&' : '?'}requestId=${encodeURIComponent(data.requestId)}`;
+                }
+                return clients.openWindow(targetUrl);
             }
         })
     );

@@ -6,16 +6,31 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Inbox, History } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth.jsx";
 import { useEffect } from "react";
+import { useLocation } from "wouter";
 
 export default function ResidentDashboard() {
   const { user } = useAuth();
   const { data: requests, isLoading } = useVisitorRequests();
+  const [location] = useLocation();
 
   useEffect(() => {
     if (user?.residencyName) {
       document.title = `${user.residencyName} Resident Dashboard`;
     }
   }, [user?.residencyName]);
+  
+  useEffect(() => {
+    try {
+      const url = new URL(location, window.location.origin);
+      const requestId = url.searchParams.get("requestId");
+      if (requestId) {
+        const el = document.getElementById(`request-${requestId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+    } catch {}
+  }, [location, isLoading]);
 
   // Filter requests locally for this view (API would handle this in real app via auth context)
   const pendingRequests = requests?.filter(r => r.status === "pending") || [];

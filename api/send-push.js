@@ -36,6 +36,7 @@ export default async function handler(req, res) {
     const db = admin.firestore();
     let tokens = [];
     let flatNumber;
+    let blockName;
 
     if (userId) {
       const userDoc = await db.collection("residencies").doc(residencyId).collection("residents").doc(userId).get();
@@ -44,7 +45,14 @@ export default async function handler(req, res) {
         if (u.fcmToken) tokens.push(u.fcmToken);
         if (u.flatId) {
           const flatDoc = await db.collection("residencies").doc(residencyId).collection("flats").doc(String(u.flatId)).get();
-          if (flatDoc.exists) flatNumber = flatDoc.data()?.number;
+          if (flatDoc.exists) {
+            const fd = flatDoc.data();
+            flatNumber = fd?.number;
+            if (fd?.blockId) {
+              const blockDoc = await db.collection("residencies").doc(residencyId).collection("blocks").doc(String(fd.blockId)).get();
+              if (blockDoc.exists) blockName = blockDoc.data()?.name;
+            }
+          }
         }
       }
     } else if (flatId) {
@@ -57,7 +65,14 @@ export default async function handler(req, res) {
         }
       });
       const flatDoc = await db.collection("residencies").doc(residencyId).collection("flats").doc(String(flatId)).get();
-      if (flatDoc.exists) flatNumber = flatDoc.data()?.number;
+      if (flatDoc.exists) {
+        const fd = flatDoc.data();
+        flatNumber = fd?.number;
+        if (fd?.blockId) {
+          const blockDoc = await db.collection("residencies").doc(residencyId).collection("blocks").doc(String(fd.blockId)).get();
+          if (blockDoc.exists) blockName = blockDoc.data()?.name;
+        }
+      }
     } else {
       res.status(400).json({ error: "Provide userId or flatId" });
       return;
@@ -76,6 +91,7 @@ export default async function handler(req, res) {
       residencyId,
       flatId: String(flatId || data?.flatId || ""),
       flatNumber: flatNumber ? String(flatNumber) : "",
+      location: blockName && flatNumber ? `${blockName} • Flat ${flatNumber}` : (flatNumber ? `Flat ${flatNumber}` : ""),
     };
 
     let response;

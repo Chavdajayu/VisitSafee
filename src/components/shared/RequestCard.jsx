@@ -20,7 +20,7 @@ export const RequestCard = memo(function RequestCard({ request, variant }) {
   };
 
   return (
-    <Card className="overflow-hidden border-l-4 border-l-primary/20 hover:border-l-primary transition-all duration-300">
+    <Card id={`request-${request.id}`} className="overflow-hidden border-l-4 border-l-primary/20 hover:border-l-primary transition-all duration-300">
       <CardHeader className="pb-3 bg-slate-50/50 flex flex-row items-start justify-between">
         <div>
           <h3 className="font-display font-bold text-lg text-slate-900">{request.visitorName}</h3>
