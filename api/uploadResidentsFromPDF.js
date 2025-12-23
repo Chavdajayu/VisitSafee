@@ -10,6 +10,7 @@ export const config = {
   },
 };
 
+// --- Helper for Firebase Init ---
 function initAdmin() {
   if (admin.apps.length) return;
   const svc = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -25,46 +26,73 @@ function initAdmin() {
 }
 
 export default async function handler(req, res) {
-  // Always set JSON content type
+  // 🔥 GUARANTEED JSON RESPONSE HEADER
   res.setHeader("Content-Type", "application/json");
 
   try {
     if (req.method !== "POST") {
-      return res.status(405).json({ success: false, message: "Method not allowed" });
+      res.status(405).json({ success: false, message: "Method not allowed" });
+      return;
     }
 
-    initAdmin();
-    if (!admin.apps.length) {
-      return res.status(500).json({ success: false, message: "Server configuration missing (Firebase)" });
+    // 🔥 FIREBASE INIT WRAPPED
+    try {
+        initAdmin();
+        if (!admin.apps.length) {
+            throw new Error("Server configuration missing (Firebase)");
+        }
+    } catch (e) {
+        res.status(500).json({ success: false, message: "Firebase Init Failed", error: e.message });
+        return;
     }
 
     const db = admin.firestore();
 
-    // Promisify formidable
-    const { fields, files } = await new Promise((resolve, reject) => {
-        const form = formidable({ multiples: false });
-        form.parse(req, (err, fields, files) => {
-            if (err) reject(err);
-            else resolve({ fields, files });
+    // 🔥 FORMIDABLE PROMISE WRAPPER
+    let data;
+    try {
+        data = await new Promise((resolve, reject) => {
+            const form = formidable({ multiples: false });
+            form.parse(req, (err, fields, files) => {
+                if (err) reject(err);
+                else resolve({ fields, files });
+            });
         });
-    });
+    } catch (formError) {
+        res.status(400).json({ success: false, message: "Form parsing failed", error: formError.message });
+        return;
+    }
 
-    const file = files.file ? (Array.isArray(files.file) ? files.file[0] : files.file) : null;
+    const file = data.files.file ? (Array.isArray(data.files.file) ? data.files.file[0] : data.files.file) : null;
     if (!file) {
-      return res.status(400).json({ success: false, message: "PDF missing" });
+      res.status(400).json({ success: false, message: "PDF file missing" });
+      return;
     }
 
     // Handle residencyId
-    let residencyId = fields.residencyId;
+    let residencyId = data.fields.residencyId;
     if (Array.isArray(residencyId)) residencyId = residencyId[0];
     if (!residencyId) {
-        return res.status(400).json({ success: false, message: "Missing residencyId" });
+        res.status(400).json({ success: false, message: "Missing residencyId" });
+        return;
     }
 
-    const buffer = fs.readFileSync(file.filepath);
-    const data = await pdf(buffer);
+    // 🔥 PDF PARSING WRAPPED
+    let pdfText = "";
+    try {
+      const buffer = fs.readFileSync(file.filepath);
+      const parsed = await pdf(buffer);
+      pdfText = parsed.text || "";
+    } catch (pdfError) {
+      res.status(400).json({ 
+        success: false, 
+        message: "PDF parsing failed", 
+        error: pdfError.message, 
+      }); 
+      return;
+    }
 
-    const lines = data.text
+    const lines = pdfText
       .split(/\r?\n/)
       .map(l => l.trim())
       .filter(Boolean);
@@ -77,64 +105,67 @@ export default async function handler(req, res) {
     let batchCount = 0;
 
     // Fetch reference data for validation
-    const residencyRef = db.collection("residencies").doc(residencyId);
-    const [blocksSnap, flatsSnap, residentsSnap] = await Promise.all([
-        residencyRef.collection("blocks").get(),
-        residencyRef.collection("flats").get(),
-        residencyRef.collection("residents").get()
-    ]);
+    // 🔥 ASYNC DATA FETCH WRAPPED
+    let blocks, flats, occupiedFlatIds, existingUsernames, residencyRef;
+    try {
+        residencyRef = db.collection("residencies").doc(residencyId);
+        const [blocksSnap, flatsSnap, residentsSnap] = await Promise.all([
+            residencyRef.collection("blocks").get(),
+            residencyRef.collection("flats").get(),
+            residencyRef.collection("residents").get()
+        ]);
 
-    const blocks = blocksSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const flats = flatsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const occupiedFlatIds = new Set(residentsSnap.docs.map(d => d.data().flatId));
-    const existingUsernames = new Set(residentsSnap.docs.map(d => d.data().username));
+        blocks = blocksSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        flats = flatsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        occupiedFlatIds = new Set(residentsSnap.docs.map(d => d.data().flatId));
+        existingUsernames = new Set(residentsSnap.docs.map(d => d.data().username));
+    } catch (dbError) {
+        res.status(500).json({ success: false, message: "Database fetch failed", error: dbError.message });
+        return;
+    }
 
+    // 🔥 ROW PROCESSING LOOP
     for (const line of lines) {
       try {
-        // FORMAT: Block [Name] [Flat] [Name] [Phone]
-        // Example: Block A 101 Jaydeep 9876543210
-        // Or user's prompt example: Block A | 408 | Jaydeep | ... (which implies separators)
-        // Or user's code assumption: Block Flat Name Phone (4 parts)
-        
-        // Robust Parsing Strategy:
-        // 1. Split by spaces
+        // Robust Parsing Logic (Preserved from previous success)
         let parts = line.split(/\s+/);
         
-        // 2. Remove "Block" keyword if present at start
         if (parts.length > 0 && parts[0].toLowerCase() === 'block') {
             parts.shift();
         }
 
-        // 3. Check length (Need at least Block, Flat, Name)
         if (parts.length < 3) {
-            // Not a valid resident line (maybe header/footer)
             continue; 
         }
 
         const blockName = parts[0];
         const flatNumber = parts[1];
-        const name = parts[2]; // Taking first part of name as prompt implies simple logic? 
-        // Wait, prompt says "Username -> Resident Name". If name is "Jaydeep Singh", split gives "Jaydeep", "Singh".
-        // Code in prompt: `const [block, flat, name, phoneRaw] = parts;` -> This assumes 1-word name.
-        // I will try to join the name if possible, but identifying where phone starts is hard without regex.
-        // I'll stick to the "first name only" or "name is one word" assumption from the user's code for safety, 
-        // OR better: use regex if it matches, else fallback to split.
+        const nameStart = parts[2];
         
-        let phoneRaw = parts.length > 3 ? parts[parts.length - 1] : null;
-        // If phone is not digits, maybe it's part of name?
-        // Let's stick to the prompt's split logic but slightly improved.
+        // Simple heuristic for prompt compatibility + robustness
+        // Format: Block Flat Name... Phone?
         
-        // Re-implementing prompt logic mostly:
-        // const [block, flat, name, phoneRaw] = parts;
-        
-        // To be safe with "Block A":
-        // blockName is parts[0] (which is "A" after shift)
-        
-        // Validation:
+        let residentName = nameStart; 
+        let phoneRaw = null;
+
+        // Try to identify phone at end
+        if (parts.length > 3) {
+             const lastPart = parts[parts.length - 1];
+             if (/^(\+?[\d\-\s]+)$/.test(lastPart) && lastPart.replace(/\D/g, '').length > 5) {
+                 phoneRaw = lastPart;
+                 residentName = parts.slice(2, parts.length - 1).join(" ");
+             } else {
+                 residentName = parts.slice(2).join(" ");
+             }
+        } else {
+            // Just 3 parts: Block Flat Name
+            residentName = parts[2];
+        }
+
+        // Validation
         const block = blocks.find(b => b.name.toLowerCase() === blockName.toLowerCase());
         if (!block) {
             skipped++;
-            // errors.push(`Block ${blockName} not found`); // Optional: don't spam errors for header lines
             continue;
         }
 
@@ -151,28 +182,6 @@ export default async function handler(req, res) {
             continue;
         }
 
-        // Name handling: Try to capture full name if possible
-        // If parts has more than 3 elements (Block, Flat, Name... Phone?)
-        // If the last element looks like a phone, treat it as phone.
-        let residentName = name;
-        let phone = null;
-        
-        // Simple heuristic: 
-        if (parts.length > 3) {
-             const lastPart = parts[parts.length - 1];
-             if (/^(\+?[\d\-\s]+)$/.test(lastPart) && lastPart.replace(/\D/g, '').length > 5) {
-                 phoneRaw = lastPart;
-                 residentName = parts.slice(2, parts.length - 1).join(" ");
-             } else {
-                 residentName = parts.slice(2).join(" "); // No phone
-                 phoneRaw = null;
-             }
-        }
-
-        if (phoneRaw) {
-             phone = phoneRaw.replace(/\D/g, "");
-        }
-
         // Username & Password
         const username = residentName.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
         if (existingUsernames.has(username)) {
@@ -181,19 +190,23 @@ export default async function handler(req, res) {
              continue;
         }
 
+        let phone = null;
+        if (phoneRaw) {
+             phone = phoneRaw.replace(/\D/g, "");
+        }
+
         const passwordRaw = residentName.slice(0, 4).toLowerCase() + (phone ? phone.slice(-2) : "00");
         const hashedPassword = await bcrypt.hash(passwordRaw, 10);
 
-        // Firestore Write (Project Schema)
+        // Firestore Write (Preserving correct schema: residencies/{id}/residents)
         const ref = residencyRef.collection("residents").doc(username);
         batch.set(ref, {
           username,
           password: hashedPassword,
-          phone: phone ? `+91${phone}` : null, // Assuming +91 as per prompt
+          phone: phone ? `+91${phone}` : null,
           flatId: flat.id,
           active: true,
           createdAt: new Date().toISOString(),
-          // Metadata for admin
           uploadedFromPdf: true
         });
 
@@ -209,9 +222,9 @@ export default async function handler(req, res) {
             batchCount = 0;
         }
 
-      } catch (e) {
+      } catch (rowErr) {
         skipped++;
-        errors.push(e.message);
+        errors.push(rowErr.message);
       }
     }
 
@@ -219,19 +232,23 @@ export default async function handler(req, res) {
         await batch.commit();
     }
 
-    return res.status(200).json({
+    // 🔥 FINAL SUCCESS RESPONSE
+    res.status(200).json({
       success: true,
       created,
       skipped,
       errors,
     });
+    return;
 
   } catch (fatal) {
-    console.error("Fatal Error:", fatal);
-    return res.status(500).json({
+    // 🔥 LAST-RESORT SAFETY NET
+    console.error("Fatal API Error:", fatal);
+    res.status(500).json({
       success: false,
-      message: "Internal server error",
-      error: fatal.message,
+      message: "Server crashed but JSON response preserved",
+      error: fatal?.message || "Unknown error",
     });
+    return;
   }
 }

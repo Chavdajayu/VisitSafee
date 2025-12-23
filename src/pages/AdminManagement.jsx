@@ -786,12 +786,12 @@ function BulkResidentForm({ onCancel, onSuccess }) {
         try {
            res = JSON.parse(text);
         } catch {
-           console.error("Server returned non-JSON:", text);
-           throw new Error("Server returned invalid response (HTML/Text). Check logs.");
+           console.error("RAW SERVER RESPONSE:", text);
+           throw new Error("Server returned HTML/Text. Check Vercel logs.");
         }
         
-        if (!response.ok || !res.success) {
-           throw new Error(res.message || res.error || "Failed to process PDF");
+        if (!res.success) {
+           throw new Error(res.message || res.error || "Upload failed");
         }
 
         setResult(res);
