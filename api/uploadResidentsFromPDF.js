@@ -1,7 +1,8 @@
 import admin from "firebase-admin";
 import formidable from "formidable";
 import fs from "fs";
-import pdfParse from "pdf-parse/lib/pdf-parse.js"; // ✅ CORRECT IMPORT
+import { PDFParse } from "pdf-parse";
+import bcrypt from "bcryptjs";
 
 export const config = {
   api: {
@@ -92,7 +93,8 @@ export default async function handler(req, res) {
     let pdfText = "";
     try {
       const buffer = fs.readFileSync(file.filepath);
-      const parsed = await pdfParse(buffer);
+      const parser = new PDFParse({ data: buffer });
+      const parsed = await parser.getText();
       pdfText = parsed.text || "";
     } catch (pdfError) {
       res.status(200).json({ 
