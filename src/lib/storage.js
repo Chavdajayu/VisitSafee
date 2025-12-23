@@ -809,6 +809,120 @@ class StorageService {
     return { username: data.username };
   }
 
+  async createResidentsBulk(pdfEntries) {
+    const user = await this.getCurrentUser();
+    if (!user || user.role !== 'admin') throw new Error("Unauthorized");
+
+    // 1. Fetch all reference data
+    const blocksSnap = await getDocs(collection(db, "residencies", user.residencyId, "blocks"));
+    const blocks = blocksSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    const flatsSnap = await getDocs(collection(db, "residencies", user.residencyId, "flats"));
+    const flats = flatsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    const residentsSnap = await getDocs(collection(db, "residencies", user.residencyId, "residents"));
+    const existingUsernames = new Set(residentsSnap.docs.map(d => d.data().username));
+    const occupiedFlatIds = new Set(residentsSnap.docs.map(d => d.data().flatId));
+
+    let batch = writeBatch(db);
+    let count = 0;
+    let skipped = 0;
+    let failed = 0; // For errors during batch (unlikely with this logic, but tracked)
+    const details = []; 
+    const maxBatchSize = 450;
+
+    for (const entry of pdfEntries) {
+        // Entry: { blockName, flatNumber, name, phone }
+        try {
+            // Validate Block
+            const entryBlockName = entry.blockName.trim();
+            // Match "Block A" against "Block A" or "A"
+            const block = blocks.find(b => b.name.toLowerCase() === entryBlockName.toLowerCase()) || 
+                          blocks.find(b => b.name.toLowerCase() === `block ${entryBlockName.toLowerCase()}`) ||
+                          blocks.find(b => b.name.toLowerCase().endsWith(` ${entryBlockName.toLowerCase()}`)); // Loose match
+
+            if (!block) {
+                skipped++;
+                details.push({ ...entry, status: 'skipped', reason: `Block '${entry.blockName}' not found` });
+                continue;
+            }
+
+            // Validate Flat
+            const flat = flats.find(f => f.blockId === block.id && f.number === entry.flatNumber.toString());
+            if (!flat) {
+                skipped++;
+                details.push({ ...entry, status: 'skipped', reason: `Flat '${entry.flatNumber}' not found in ${block.name}` });
+                continue;
+            }
+
+            // Check Occupancy
+            if (occupiedFlatIds.has(flat.id)) {
+                skipped++;
+                details.push({ ...entry, status: 'skipped', reason: `Flat '${entry.flatNumber}' is already occupied` });
+                continue;
+            }
+
+            // Generate Username (First name, lowercase, alphanumeric)
+            const firstName = entry.name.trim().split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+            const username = firstName;
+
+            if (!username) {
+                skipped++;
+                details.push({ ...entry, status: 'skipped', reason: `Invalid name format` });
+                continue;
+            }
+
+            if (existingUsernames.has(username)) {
+                skipped++;
+                details.push({ ...entry, status: 'skipped', reason: `Username '${username}' already exists` });
+                continue;
+            }
+
+            // Generate Password
+            const namePart = entry.name.trim().toLowerCase().replace(/[^a-z]/g, '').substring(0, 4);
+            let phonePart = "00";
+            if (entry.phone) {
+                const digits = entry.phone.replace(/[^0-9]/g, '');
+                if (digits.length >= 2) {
+                    phonePart = digits.substring(digits.length - 2);
+                }
+            }
+            const password = `${namePart}${phonePart}`;
+
+            // Add to batch
+            const ref = doc(collection(db, "residencies", user.residencyId, "residents"), username);
+            batch.set(ref, {
+                username,
+                password, 
+                phone: entry.phone || null,
+                flatId: flat.id,
+                active: true,
+                createdAt: new Date().toISOString()
+            });
+
+            // Update local state
+            existingUsernames.add(username);
+            occupiedFlatIds.add(flat.id);
+            count++;
+            
+            if (count % maxBatchSize === 0) {
+                await batch.commit();
+                batch = writeBatch(db);
+            }
+        } catch (err) {
+            console.error("Error processing entry:", entry, err);
+            skipped++;
+            details.push({ ...entry, status: 'failed', reason: err.message });
+        }
+    }
+
+    if (count % maxBatchSize !== 0) {
+        await batch.commit();
+    }
+
+    return { created: count, skipped, failed, details };
+  }
+
   async createSystemUser(data) {
     const user = await this.getCurrentUser();
     if (!user || user.role !== 'admin') throw new Error("Unauthorized");

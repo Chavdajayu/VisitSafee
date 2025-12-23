@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Layout } from "@/components/shared/Layout";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,8 +22,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Loader2, Users, Building2, Home, Shield, UserCog, User } from "lucide-react";
+import { 
+  Plus, Loader2, Users, Building2, Home, Shield, UserCog, User,
+  Search, Filter, Trash2, ShieldAlert, MoreVertical, FileText, Upload, CheckCircle, AlertCircle 
+} from "lucide-react";
+import * as pdfjsLib from 'pdfjs-dist';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+// Configure PDF worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 import { storage } from "@/lib/storage";
 
 export default function AdminManagement() {
@@ -35,6 +42,12 @@ export default function AdminManagement() {
   
   // New state for Role Selection
   const [selectedRole, setSelectedRole] = useState(null);
+  const [residentCreationMode, setResidentCreationMode] = useState(null);
+  
+  // Reset mode when role changes
+  useEffect(() => {
+    if (!selectedRole) setResidentCreationMode(null);
+  }, [selectedRole]);
 
   // Reset role when dialog closes
   useEffect(() => {
@@ -234,13 +247,44 @@ export default function AdminManagement() {
                     ) : (
                       <>
                         {selectedRole === "resident" ? (
-                          <AddResidentForm
-                            blocks={blocks}
-                            flats={flats}
-                            onSubmit={(data) => addResidentMutation.mutate(data)}
-                            isLoading={addResidentMutation.isPending}
-                            onCancel={() => setSelectedRole(null)}
-                          />
+                          !residentCreationMode ? (
+                             <div className="grid grid-cols-1 gap-4 py-4">
+                               <Button variant="outline" className="h-auto p-4 flex justify-start gap-4 hover:bg-slate-50" onClick={() => setResidentCreationMode('manual')}>
+                                 <div className="p-2 bg-blue-100 rounded-full">
+                                    <User className="h-6 w-6 text-blue-600" />
+                                 </div>
+                                 <div className="text-left">
+                                    <div className="font-semibold text-slate-900">Add Single Resident</div>
+                                    <div className="text-sm text-slate-500">Fill form manually</div>
+                                 </div>
+                               </Button>
+                               <Button variant="outline" className="h-auto p-4 flex justify-start gap-4 hover:bg-slate-50" onClick={() => setResidentCreationMode('bulk')}>
+                                 <div className="p-2 bg-orange-100 rounded-full">
+                                    <FileText className="h-6 w-6 text-orange-600" />
+                                 </div>
+                                 <div className="text-left">
+                                    <div className="font-semibold text-slate-900">Upload Resident PDF</div>
+                                    <div className="text-sm text-slate-500">Bulk create from file</div>
+                                 </div>
+                               </Button>
+                               <div className="flex justify-end pt-2">
+                                  <Button variant="ghost" onClick={() => setSelectedRole(null)}>Back</Button>
+                               </div>
+                             </div>
+                          ) : residentCreationMode === 'manual' ? (
+                            <AddResidentForm
+                              blocks={blocks}
+                              flats={flats}
+                              onSubmit={(data) => addResidentMutation.mutate(data)}
+                              isLoading={addResidentMutation.isPending}
+                              onCancel={() => setResidentCreationMode(null)}
+                            />
+                          ) : (
+                             <BulkResidentForm 
+                               onSuccess={() => refetchUsers()}
+                               onCancel={() => setResidentCreationMode(null)}
+                             />
+                          )
                         ) : (
                           <AddSystemUserForm 
                             role={selectedRole}
@@ -715,5 +759,114 @@ function AddFlatForm({ blocks, onSubmit, isLoading }) {
         )}
       </Button>
     </form>
+  );
+}
+
+function BulkResidentForm({ onCancel, onSuccess }) {
+  const [file, setFile] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const handleProcess = async () => {
+     if (!file) return;
+     setIsProcessing(true);
+     try {
+        const buffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument(buffer).promise;
+        let fullText = "";
+        for (let i = 1; i <= pdf.numPages; i++) {
+           const page = await pdf.getPage(i);
+           const content = await page.getTextContent();
+           const strings = content.items.map(item => item.str);
+           fullText += strings.join(" ") + "\n";
+        }
+        
+        const lines = fullText.split(/\r?\n/).filter(l => l.trim().length > 0);
+        const entries = [];
+        
+        for (const line of lines) {
+           const regex = /Block\s+(.+?)\s+(\d+)\s+(.+?)(?:\s+(\+?[\d\s\-]+))?$/i;
+           const match = line.match(regex);
+           if (match) {
+              entries.push({
+                 blockName: match[1].trim(),
+                 flatNumber: match[2].trim(),
+                 name: match[3].trim(),
+                 phone: match[4] ? match[4].trim() : null
+              });
+           }
+        }
+
+        if (entries.length === 0) {
+           throw new Error("No valid entries found in PDF. Ensure format: Block [Name] [Flat] [Name] [Phone]");
+        }
+
+        const res = await storage.createResidentsBulk(entries);
+        setResult(res);
+        if (onSuccess) onSuccess();
+
+     } catch (e) {
+        console.error(e);
+        alert(e.message); 
+     } finally {
+        setIsProcessing(false);
+     }
+  };
+
+  if (result) {
+     return (
+        <div className="space-y-4">
+           <div className="bg-green-50 p-4 rounded-md">
+              <h3 className="font-semibold text-green-800 flex items-center gap-2">
+                 <CheckCircle className="w-5 h-5" /> Processing Complete
+              </h3>
+              <ul className="mt-2 space-y-1 text-sm text-green-700">
+                 <li>Created: <strong>{result.created}</strong></li>
+                 <li>Skipped: <strong>{result.skipped}</strong></li>
+                 <li>Failed: <strong>{result.failed}</strong></li>
+              </ul>
+           </div>
+           {result.details.length > 0 && (
+             <div className="max-h-40 overflow-y-auto text-xs border rounded p-2 bg-slate-50">
+               {result.details.map((d, i) => (
+                 <div key={i} className={`mb-1 ${d.status === 'failed' ? 'text-red-600' : 'text-amber-600'}`}>
+                   [{d.status.toUpperCase()}] {d.reason} ({d.name})
+                 </div>
+               ))}
+             </div>
+           )}
+           <Button onClick={onCancel} className="w-full">Close</Button>
+        </div>
+     )
+  }
+
+  return (
+     <div className="space-y-4">
+        <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center hover:bg-slate-50 transition-colors relative">
+           <input 
+             type="file" 
+             accept=".pdf" 
+             onChange={e => setFile(e.target.files[0])} 
+             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+             id="pdf-upload" 
+           />
+           <div className="pointer-events-none">
+              <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2" />
+              <div className="text-sm font-medium text-slate-900">
+                 {file ? file.name : "Click to upload PDF"}
+              </div>
+              <div className="text-xs text-slate-500 mt-1">
+                 Format: Block [Name] [Flat] [Resident Name] [Phone]
+              </div>
+           </div>
+        </div>
+        
+        {file && (
+           <Button onClick={handleProcess} disabled={isProcessing} className="w-full">
+              {isProcessing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Processing...</> : "Process & Create Residents"}
+           </Button>
+        )}
+        <Button variant="ghost" onClick={onCancel} className="w-full">Cancel</Button>
+     </div>
   );
 }
