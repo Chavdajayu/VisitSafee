@@ -779,7 +779,14 @@ function BulkResidentForm({ onCancel, onSuccess }) {
            body: formData,
         });
 
-        const res = await response.json();
+        const text = await response.text();
+        let res;
+        try {
+           res = JSON.parse(text);
+        } catch {
+           console.error("Server returned non-JSON:", text);
+           throw new Error("Server returned invalid response");
+        }
         
         if (!response.ok) {
            throw new Error(res.error || "Failed to process PDF");
