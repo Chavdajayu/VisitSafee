@@ -781,6 +781,16 @@ function BulkResidentForm({ onCancel, onSuccess }) {
            body: formData,
         });
 
+        // Validate response content-type
+        const contentType = response.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+           toast({
+             variant: "destructive",
+             title: "Invalid Server Response",
+             description: "Server did not return JSON. Please try again later."
+           });
+           return;
+        }
         // "ANTI-Unexpected token" Response Handling
         const text = await response.text();
         let res;
@@ -792,13 +802,14 @@ function BulkResidentForm({ onCancel, onSuccess }) {
         }
         
         if (!res.success) {
-           throw new Error(res.message || res.error || "Upload failed");
+           const msg = res.error?.message || "Upload failed";
+           throw new Error(msg);
         }
 
         setResult(res);
         toast({
             title: "Upload Complete",
-            description: `Processed ${res.created + res.skipped} rows.`,
+            description: `Processed ${res.residentsCreated + res.skippedRows} rows.`,
         });
 
         // Trigger refresh if needed, but keep modal open to show stats
@@ -824,16 +835,16 @@ function BulkResidentForm({ onCancel, onSuccess }) {
                  <CheckCircle className="w-5 h-5" /> Processing Complete
               </h3>
               <ul className="mt-2 space-y-1 text-sm text-green-700">
-                 <li>Created: <strong>{result.created}</strong></li>
-                 <li>Skipped: <strong>{result.skipped}</strong></li>
-                 {result.errors && <li>Failed: <strong>{result.errors.length}</strong></li>}
-              </ul>
+                 <li>Created: <strong>{result.residentsCreated}</strong></li>
+                 <li>Skipped: <strong>{result.skippedRows}</strong></li>
+                 {result.warnings && <li>Warnings: <strong>{result.warnings.length}</strong></li>}
+             </ul>
            </div>
-           {result.errors && result.errors.length > 0 && (
+           {result.warnings && result.warnings.length > 0 && (
              <div className="max-h-40 overflow-y-auto text-xs border rounded p-2 bg-slate-50">
-               {result.errors.map((d, i) => (
-                 <div key={i} className="mb-1 text-red-600">
-                   [ERROR] {d.error} (Line: {d.line})
+               {result.warnings.map((w, i) => (
+                 <div key={i} className="mb-1 text-amber-700">
+                   {w}
                  </div>
                ))}
              </div>

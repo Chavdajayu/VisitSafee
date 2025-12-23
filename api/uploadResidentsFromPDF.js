@@ -2,7 +2,6 @@ import admin from "firebase-admin";
 import formidable from "formidable";
 import fs from "fs";
 import pdfParse from "pdf-parse/lib/pdf-parse.js"; // ✅ CORRECT IMPORT
-import bcrypt from "bcryptjs";
 
 export const config = {
   api: {
@@ -42,7 +41,7 @@ export default async function handler(req, res) {
             throw new Error("Server configuration missing (Firebase)");
         }
     } catch (e) {
-        res.status(500).json({ success: false, message: "Firebase Init Failed", error: e.message });
+        res.status(200).json({ success: false, error: { code: "UPLOAD_ERROR", message: "Firebase initialization failed" } });
         return;
     }
 
@@ -52,20 +51,20 @@ export default async function handler(req, res) {
     let data;
     try {
         data = await new Promise((resolve, reject) => {
-            const form = formidable({ multiples: false });
+            const form = formidable({ multiples: false, maxFileSize: 12 * 1024 * 1024 });
             form.parse(req, (err, fields, files) => {
                 if (err) reject(err);
                 else resolve({ fields, files });
             });
         });
     } catch (formError) {
-        res.status(400).json({ success: false, message: "Form parsing failed", error: formError.message });
+        res.status(200).json({ success: false, error: { code: "UPLOAD_ERROR", message: "Form parsing failed" } });
         return;
     }
 
     const file = data.files.file ? (Array.isArray(data.files.file) ? data.files.file[0] : data.files.file) : null;
     if (!file) {
-      res.status(400).json({ success: false, message: "PDF file missing" });
+      res.status(200).json({ success: false, error: { code: "INVALID_FILE", message: "PDF file missing" } });
       return;
     }
 
@@ -73,8 +72,20 @@ export default async function handler(req, res) {
     let residencyId = data.fields.residencyId;
     if (Array.isArray(residencyId)) residencyId = residencyId[0];
     if (!residencyId) {
-        res.status(400).json({ success: false, message: "Missing residencyId" });
+        res.status(200).json({ success: false, error: { code: "UPLOAD_ERROR", message: "Missing residencyId" } });
         return;
+    }
+
+    // Validate file mimetype and size
+    const isPdfMime = typeof file.mimetype === "string" && file.mimetype.toLowerCase().includes("pdf");
+    const isPdfName = typeof file.originalFilename === "string" && file.originalFilename.toLowerCase().endsWith(".pdf");
+    if (!isPdfMime && !isPdfName) {
+      res.status(200).json({ success: false, error: { code: "INVALID_FILE", message: "Only PDF files are allowed" } });
+      return;
+    }
+    if (typeof file.size === "number" && file.size > 12 * 1024 * 1024) {
+      res.status(200).json({ success: false, error: { code: "INVALID_FILE", message: "File too large (max 12MB)" } });
+      return;
     }
 
     // 🔥 PDF PARSING WRAPPED (SERVER-SIDE ONLY)
@@ -84,11 +95,10 @@ export default async function handler(req, res) {
       const parsed = await pdfParse(buffer);
       pdfText = parsed.text || "";
     } catch (pdfError) {
-      res.status(400).json({ 
-        success: false, 
-        message: "PDF parsing failed", 
-        error: pdfError.message, 
-      }); 
+      res.status(200).json({ 
+        success: false,
+        error: { code: "PDF_PARSE_ERROR", message: "Failed to parse PDF" }
+      });
       return;
     }
 
@@ -100,7 +110,7 @@ export default async function handler(req, res) {
     let created = 0;
     let skipped = 0;
     const batch = db.batch();
-    const errors = [];
+    const warnings = [];
 
     // Helper to hash password
     const hashPassword = async (pwd) => {
@@ -117,6 +127,7 @@ export default async function handler(req, res) {
         const parts = line.split(/\s+/);
         if (parts.length < 3) {
             skipped++;
+            warnings.push(`Skipped line (insufficient fields): "${line}"`);
             continue;
         }
 
@@ -128,6 +139,7 @@ export default async function handler(req, res) {
         const phoneIndex = parts.findIndex(p => /^\d{10}$/.test(p));
         if (phoneIndex === -1) {
              skipped++; // No valid phone found
+             warnings.push(`Skipped line (invalid phone): "${line}"`);
              continue;
         }
 
@@ -148,11 +160,13 @@ export default async function handler(req, res) {
         } else {
             // Unclear format
             skipped++;
+            warnings.push(`Skipped line (unrecognized format): "${line}"`);
             continue;
         }
 
         if (!flatNumber || !phone || !name) {
             skipped++;
+            warnings.push(`Skipped line (missing required fields): "${line}"`);
             continue;
         }
 
@@ -203,7 +217,7 @@ export default async function handler(req, res) {
              created++;
         } catch (err) {
              console.error(`Failed to create user ${phone}:`, err);
-             errors.push({ line, error: err.message });
+             warnings.push(`Failed to create user ${phone}: ${err.message}`);
              skipped++;
         }
     }
@@ -214,14 +228,13 @@ export default async function handler(req, res) {
 
     res.status(200).json({
         success: true,
-        created,
-        skipped,
-        errors,
-        message: `Processed ${created + skipped} rows. Created: ${created}, Skipped: ${skipped}`
+        residentsCreated: created,
+        skippedRows: skipped,
+        warnings
     });
 
   } catch (err) {
     console.error("Critical Upload Error:", err);
-    res.status(500).json({ success: false, message: "Internal Server Error", error: err.message });
+    res.status(500).json({ success: false, error: { code: "INTERNAL_ERROR", message: "Internal Server Error" } });
   }
 }
