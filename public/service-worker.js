@@ -125,28 +125,27 @@ self.addEventListener('notificationclick', function(event) {
   notification.close();
 
   if (action === 'approve' || action === 'reject') {
-    // Perform Firestore update directly from Service Worker
-    const promise = db.collection('residencies')
-        .doc(data.residencyId)
-        .collection('visitor_requests')
-        .doc(data.requestId)
-        .update({
-            status: action === 'approve' ? 'approved' : 'rejected',
-            updatedAt: new Date().toISOString(),
-            actionBy: data.username
-        }).then(() => {
-             // Show success notification
-             return self.registration.showNotification('VisitSafe', {
-                body: `Visitor request ${action === 'approve' ? 'approved' : 'rejected'}.`,
-                icon: '/favicon.png'
-             });
-        }).catch(err => {
-            console.error('Error updating status:', err);
-             // If update fails, fallback to opening the app
-             if (clients.openWindow) {
-                 return clients.openWindow(data.url);
-             }
-        });
+    const promise = fetch('/api/update-request-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        residencyId: data.residencyId,
+        requestId: data.requestId,
+        status: action === 'approve' ? 'approved' : 'rejected',
+        username: data.username
+      })
+    }).then(async (resp) => {
+      if (!resp.ok) throw new Error('Status update failed');
+      return self.registration.showNotification('VisitSafe', {
+        body: `Visitor request ${action === 'approve' ? 'approved' : 'rejected'}.`,
+        icon: '/favicon.ico'
+      });
+    }).catch(err => {
+      console.error('Error updating status:', err);
+      if (clients.openWindow && data.url) {
+        return clients.openWindow(data.url);
+      }
+    });
 
     event.waitUntil(promise);
 

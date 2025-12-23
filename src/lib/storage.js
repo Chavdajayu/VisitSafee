@@ -350,7 +350,10 @@ class StorageService {
               username: 'system',
               visitorName: data.visitorName,
               phone: data.visitorPhone,
-              flatId: data.flatId
+              flatId: data.flatId,
+              vehicle: data.vehicleNumber || '',
+              purpose: data.purpose || '',
+              status: 'pending'
             }
           })
         }).catch(err => console.warn("Background push trigger failed:", err));
