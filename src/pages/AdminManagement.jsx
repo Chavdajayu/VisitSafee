@@ -112,10 +112,10 @@ export default function AdminManagement() {
 
   const addBlockMutation = useMutation({
     mutationFn: async (data) => {
-      return await storage.createBlock(data.name);
+      return await storage.createBlocks(parseInt(data.count, 10));
     },
     onSuccess: () => {
-      toast({ title: "Block added successfully" });
+      toast({ title: "Blocks created successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
       setAddBlockOpen(false);
     },
@@ -317,7 +317,7 @@ export default function AdminManagement() {
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Add New Block</DialogTitle>
+                      <DialogTitle>Add New Blocks</DialogTitle>
                     </DialogHeader>
                     <AddBlockForm
                       onSubmit={(data) => addBlockMutation.mutate(data)}
@@ -585,25 +585,28 @@ function AddSystemUserForm({
 }
 
 function AddBlockForm({ onSubmit, isLoading }) {
-  const [name, setName] = useState("");
+  const [count, setCount] = useState("");
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSubmit({ name });
-    setName("");
+    onSubmit({ count });
+    setCount("");
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <Label htmlFor="name">Block Name</Label>
+        <Label htmlFor="count">Number of Blocks</Label>
         <Input
-          id="name"
-          placeholder="Enter block name (e.g., Block A)"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          id="count"
+          type="number"
+          min={1}
+          max={26}
+          placeholder="Enter number of blocks (e.g., 3)"
+          value={count}
+          onChange={(e) => setCount(e.target.value)}
           required
-          data-testid="input-block-name"
+          data-testid="input-block-count"
         />
       </div>
       <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-create-block">
@@ -613,7 +616,7 @@ function AddBlockForm({ onSubmit, isLoading }) {
             Creating...
           </>
         ) : (
-          "Create Block"
+          "Create Blocks"
         )}
       </Button>
     </form>

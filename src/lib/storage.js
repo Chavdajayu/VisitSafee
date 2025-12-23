@@ -1,6 +1,6 @@
 import { 
   collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, 
-  query, where, orderBy, onSnapshot, deleteDoc, limit, serverTimestamp
+  query, where, orderBy, onSnapshot, deleteDoc, limit, serverTimestamp, writeBatch
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { signOut } from "firebase/auth";
@@ -614,6 +614,32 @@ class StorageService {
 
     const docRef = await addDoc(collection(db, "residencies", user.residencyId, "blocks"), { name });
     return { id: docRef.id, name };
+  }
+
+  async createBlocks(count) {
+    const user = await this.getCurrentUser();
+    if (!user) throw new Error("Not authenticated");
+    const n = parseInt(count, 10);
+    if (isNaN(n) || n < 1) throw new Error("Invalid block count");
+    const max = 26;
+    const target = Math.min(n, max);
+    const existing = await this.getBlocks(user.residencyId);
+    const existingNames = new Set(existing.map(b => b.name));
+    const namesToCreate = [];
+    for (let i = 0; i < target; i++) {
+      const name = `Block ${String.fromCharCode(65 + i)}`;
+      if (!existingNames.has(name)) namesToCreate.push(name);
+    }
+    if (namesToCreate.length === 0) return [];
+    const batch = writeBatch(db);
+    const results = [];
+    for (const name of namesToCreate) {
+      const ref = doc(collection(db, "residencies", user.residencyId, "blocks"));
+      batch.set(ref, { name });
+      results.push({ id: ref.id, name });
+    }
+    await batch.commit();
+    return results;
   }
 
   async createFlat(number, blockId, floor) {
