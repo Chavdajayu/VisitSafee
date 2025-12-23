@@ -1,0 +1,695 @@
+import { useState, useEffect } from "react";
+import { Layout } from "@/components/shared/Layout";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { Plus, Loader2, Users, Building2, Home, Shield, UserCog, User } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { storage } from "@/lib/storage";
+
+export default function AdminManagement() {
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState("users");
+  const [addUserOpen, setAddUserOpen] = useState(false);
+  const [addBlockOpen, setAddBlockOpen] = useState(false);
+  const [addFlatOpen, setAddFlatOpen] = useState(false);
+  
+  // New state for Role Selection
+  const [selectedRole, setSelectedRole] = useState(null);
+
+  // Reset role when dialog closes
+  useEffect(() => {
+    if (!addUserOpen) {
+      setTimeout(() => setSelectedRole(null), 300); // Delay reset to avoid UI flicker
+    }
+  }, [addUserOpen]);
+
+  // Real-time users subscription
+  useEffect(() => {
+    const unsubscribe = storage.subscribeToUsers((data) => {
+      queryClient.setQueryData(["/api/admin/users"], data);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  const { data: blocks = [] } = useQuery({
+    queryKey: ["/api/blocks"],
+    queryFn: async () => {
+      return await storage.getBlocks();
+    },
+  });
+
+  // Changed from residents to all users
+  const { data: users = [], refetch: refetchUsers } = useQuery({
+    queryKey: ["/api/admin/users"],
+    queryFn: async () => {
+      return await storage.getAllUsersWithDetails();
+    },
+    staleTime: Infinity
+  });
+
+  const { data: flats = {}, refetch: refetchFlats } = useQuery({
+    queryKey: ["/api/blocks/flats"],
+    queryFn: async () => {
+      const flatsByBlock = {};
+      for (const block of blocks) {
+        const blockFlats = await storage.getFlatsByBlock(block.id);
+        flatsByBlock[block.id] = blockFlats;
+      }
+      return flatsByBlock;
+    },
+    enabled: blocks.length > 0,
+  });
+
+  const addResidentMutation = useMutation({
+    mutationFn: async (data) => {
+      return await storage.createResident(data);
+    },
+    onSuccess: () => {
+      toast({ title: "Resident added successfully" });
+      refetchUsers();
+      setAddUserOpen(false);
+    },
+    onError: (err) => {
+      toast({ title: "Failed to add resident", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const addSystemUserMutation = useMutation({
+    mutationFn: async (data) => {
+      return await storage.createSystemUser(data);
+    },
+    onSuccess: (_, variables) => {
+      toast({ title: `${variables.role === 'admin' ? 'Admin' : 'Guard'} added successfully` });
+      refetchUsers();
+      setAddUserOpen(false);
+    },
+    onError: (err) => {
+      toast({ title: "Failed to add user", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const addBlockMutation = useMutation({
+    mutationFn: async (data) => {
+      return await storage.createBlock(data.name);
+    },
+    onSuccess: () => {
+      toast({ title: "Block added successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+      setAddBlockOpen(false);
+    },
+    onError: () => {
+      toast({ title: "Failed to add block", variant: "destructive" });
+    },
+  });
+
+  const addFlatMutation = useMutation({
+    mutationFn: async (data) => {
+      return await storage.createFlat(data.number, data.blockId, data.floor);
+    },
+    onSuccess: () => {
+      toast({ title: "Flat added successfully" });
+      refetchFlats();
+      setAddFlatOpen(false);
+    },
+    onError: () => {
+      toast({ title: "Failed to add flat", variant: "destructive" });
+    },
+  });
+
+  // Sorting Logic: Admin (1) > Guard (2) > Resident (3)
+  const sortedUsers = [...users].sort((a, b) => {
+    const rolePriority = { admin: 1, guard: 2, resident: 3 };
+    return (rolePriority[a.role] || 99) - (rolePriority[b.role] || 99);
+  });
+
+  return (
+    <Layout>
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Society Management</h1>
+          <p className="text-slate-500 mt-1">Manage blocks, flats, and user accounts</p>
+        </div>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="users">
+              <Users className="w-4 h-4 mr-2" />
+              Users
+            </TabsTrigger>
+            <TabsTrigger value="blocks">
+              <Building2 className="w-4 h-4 mr-2" />
+              Blocks
+            </TabsTrigger>
+            <TabsTrigger value="flats">
+              <Home className="w-4 h-4 mr-2" />
+              Flats
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Users Tab */}
+          <TabsContent value="users" className="space-y-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle>User Management</CardTitle>
+                  <p className="text-sm text-slate-500 mt-1">Add and manage users (Admins, Guards, Residents)</p>
+                </div>
+                <Dialog open={addUserOpen} onOpenChange={setAddUserOpen}>
+                  <DialogTrigger asChild>
+                    <Button data-testid="button-add-resident">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add User
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>
+                        {!selectedRole ? "Select Role" : `Add New ${selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)}`}
+                      </DialogTitle>
+                      <DialogDescription>
+                        {!selectedRole 
+                          ? "Choose the type of user account you want to create."
+                          : "Fill in the details below to create the account."}
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    {!selectedRole ? (
+                      <div className="grid grid-cols-1 gap-4 py-4">
+                        {/* Admin creation removed to enforce single-admin per residency model for now */}
+                        
+                        <Button 
+                          variant="outline" 
+                          className="h-auto p-4 flex justify-start gap-4 hover:border-primary hover:bg-primary/5"
+                          onClick={() => setSelectedRole("guard")}
+                        >
+                          <div className="p-2 bg-slate-100 rounded-full">
+                            <UserCog className="h-6 w-6 text-slate-600" />
+                          </div>
+                          <div className="text-left">
+                            <div className="font-semibold text-slate-900">Guard</div>
+                            <div className="text-sm text-slate-500">Gate entry and exit verification</div>
+                          </div>
+                        </Button>
+
+                        <Button 
+                          variant="outline" 
+                          className="h-auto p-4 flex justify-start gap-4 hover:border-primary hover:bg-primary/5"
+                          onClick={() => setSelectedRole("resident")}
+                        >
+                          <div className="p-2 bg-slate-100 rounded-full">
+                            <User className="h-6 w-6 text-slate-600" />
+                          </div>
+                          <div className="text-left">
+                            <div className="font-semibold text-slate-900">Resident</div>
+                            <div className="text-sm text-slate-500">Flat owner/tenant with approval access</div>
+                          </div>
+                        </Button>
+                        
+                        <div className="flex justify-end pt-2">
+                           <Button variant="ghost" onClick={() => setAddUserOpen(false)}>Cancel</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {selectedRole === "resident" ? (
+                          <AddResidentForm
+                            blocks={blocks}
+                            flats={flats}
+                            onSubmit={(data) => addResidentMutation.mutate(data)}
+                            isLoading={addResidentMutation.isPending}
+                            onCancel={() => setSelectedRole(null)}
+                          />
+                        ) : (
+                          <AddSystemUserForm 
+                            role={selectedRole}
+                            onSubmit={(data) => addSystemUserMutation.mutate({ ...data, role: selectedRole })}
+                            isLoading={addSystemUserMutation.isPending}
+                            onCancel={() => setSelectedRole(null)}
+                          />
+                        )}
+                      </>
+                    )}
+                  </DialogContent>
+                </Dialog>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {sortedUsers.length === 0 ? (
+                    <p className="text-slate-500 text-center py-8">No users added yet</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-slate-50">
+                            <th className="text-left p-2 font-semibold">Username</th>
+                            <th className="text-left p-2 font-semibold">Role</th>
+                            <th className="text-left p-2 font-semibold">Block</th>
+                            <th className="text-left p-2 font-semibold">Flat</th>
+                            <th className="text-left p-2 font-semibold">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sortedUsers.map((user) => (
+                            <tr key={user.id} className="border-b hover:bg-slate-50">
+                              <td className="p-2 font-medium">{user.username}</td>
+                              <td className="p-2">
+                                <span className={`text-xs px-2 py-1 rounded capitalize font-medium
+                                  ${user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 
+                                    user.role === 'guard' ? 'bg-blue-100 text-blue-800' : 
+                                    'bg-slate-100 text-slate-800'}`}>
+                                  {user.role}
+                                </span>
+                              </td>
+                              <td className="p-2">{user.flat?.block?.name || "-"}</td>
+                              <td className="p-2">{user.flat?.number || "-"}</td>
+                              <td className="p-2">
+                                <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                                  Active
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Blocks Tab */}
+          <TabsContent value="blocks" className="space-y-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle>Blocks</CardTitle>
+                  <p className="text-sm text-slate-500 mt-1">Manage society blocks</p>
+                </div>
+                <Dialog open={addBlockOpen} onOpenChange={setAddBlockOpen}>
+                  <DialogTrigger asChild>
+                    <Button data-testid="button-add-block">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Block
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Add New Block</DialogTitle>
+                    </DialogHeader>
+                    <AddBlockForm
+                      onSubmit={(data) => addBlockMutation.mutate(data)}
+                      isLoading={addBlockMutation.isPending}
+                    />
+                  </DialogContent>
+                </Dialog>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {blocks.map((block) => (
+                    <div
+                      key={block.id}
+                      className="p-4 border rounded-lg hover:bg-slate-50 transition"
+                      data-testid={`card-block-${block.id}`}
+                    >
+                      <h3 className="font-semibold text-slate-900">{block.name}</h3>
+                      <p className="text-sm text-slate-500">ID: {block.id}</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Flats Tab */}
+          <TabsContent value="flats" className="space-y-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle>Flats</CardTitle>
+                  <p className="text-sm text-slate-500 mt-1">Manage flats by block</p>
+                </div>
+                <Dialog open={addFlatOpen} onOpenChange={setAddFlatOpen}>
+                  <DialogTrigger asChild>
+                    <Button data-testid="button-add-flat">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Flat
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Add New Flat</DialogTitle>
+                    </DialogHeader>
+                    <AddFlatForm
+                      blocks={blocks}
+                      onSubmit={(data) => addFlatMutation.mutate(data)}
+                      isLoading={addFlatMutation.isPending}
+                    />
+                  </DialogContent>
+                </Dialog>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  {blocks.map((block) => (
+                    <div key={block.id}>
+                      <h3 className="font-semibold text-slate-900 mb-3">{block.name}</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        {(flats[block.id] || []).map((flat) => (
+                          <div
+                            key={flat.id}
+                            className="p-3 border rounded-lg bg-slate-50 text-center"
+                            data-testid={`card-flat-${flat.id}`}
+                          >
+                            <p className="font-semibold">Flat {flat.number}</p>
+                            <p className="text-xs text-slate-500">Floor {flat.floor}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </Layout>
+  );
+}
+
+function AddResidentForm({
+  blocks,
+  flats,
+  onSubmit,
+  isLoading,
+  onCancel,
+}) {
+  const [formData, setFormData] = useState({
+    username: "",
+    password: "",
+    phone: "",
+    blockId: "",
+    flatId: "",
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit({
+      username: formData.username,
+      password: formData.password,
+      phone: formData.phone,
+      flatId: formData.flatId || undefined,
+    });
+  };
+
+  const selectedBlockFlats = formData.blockId ? flats[formData.blockId] || [] : [];
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <Label htmlFor="username">Username</Label>
+        <Input
+          id="username"
+          placeholder="Enter username"
+          value={formData.username}
+          onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+          required
+          data-testid="input-username"
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="password">Password</Label>
+        <Input
+          id="password"
+          type="password"
+          placeholder="Enter password"
+          value={formData.password}
+          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+          required
+          data-testid="input-password"
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="phone">Phone (Optional)</Label>
+        <Input
+          id="phone"
+          placeholder="Enter phone number"
+          value={formData.phone}
+          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+          data-testid="input-phone"
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="block">Block</Label>
+        <Select value={formData.blockId} onValueChange={(value) => setFormData({ ...formData, blockId: value, flatId: "" })}>
+          <SelectTrigger data-testid="select-block">
+            <SelectValue placeholder="Select block" />
+          </SelectTrigger>
+          <SelectContent>
+            {blocks.map((block) => (
+              <SelectItem key={block.id} value={String(block.id)}>
+                {block.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {formData.blockId && (
+        <div>
+          <Label htmlFor="flat">Flat</Label>
+          <Select value={formData.flatId} onValueChange={(value) => setFormData({ ...formData, flatId: value })}>
+            <SelectTrigger data-testid="select-flat">
+              <SelectValue placeholder="Select flat" />
+            </SelectTrigger>
+            <SelectContent>
+              {selectedBlockFlats.map((flat) => (
+                <SelectItem key={flat.id} value={String(flat.id)}>
+                  Flat {flat.number} (Floor {flat.floor})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <Button type="button" variant="outline" className="w-1/3" onClick={onCancel}>Back</Button>
+        <Button type="submit" disabled={isLoading} className="w-2/3" data-testid="button-create-resident">
+          {isLoading ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Creating...
+            </>
+          ) : (
+            "Create Resident"
+          )}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function AddSystemUserForm({
+  role,
+  onSubmit,
+  isLoading,
+  onCancel
+}) {
+  const [formData, setFormData] = useState({
+    username: "",
+    password: "",
+    phone: "",
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit(formData);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <Label htmlFor="username">Username</Label>
+        <Input
+          id="username"
+          placeholder="Enter username"
+          value={formData.username}
+          onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+          required
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="password">Password</Label>
+        <Input
+          id="password"
+          type="password"
+          placeholder="Enter password"
+          value={formData.password}
+          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+          required
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="phone">Phone (Optional)</Label>
+        <Input
+          id="phone"
+          placeholder="Enter phone number"
+          value={formData.phone}
+          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+        />
+      </div>
+
+      <div className="flex gap-2">
+        <Button type="button" variant="outline" className="w-1/3" onClick={onCancel}>Back</Button>
+        <Button type="submit" disabled={isLoading} className="w-2/3">
+          {isLoading ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Creating...
+            </>
+          ) : (
+            `Create ${role.charAt(0).toUpperCase() + role.slice(1)}`
+          )}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function AddBlockForm({ onSubmit, isLoading }) {
+  const [name, setName] = useState("");
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit({ name });
+    setName("");
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <Label htmlFor="name">Block Name</Label>
+        <Input
+          id="name"
+          placeholder="Enter block name (e.g., Block A)"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          data-testid="input-block-name"
+        />
+      </div>
+      <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-create-block">
+        {isLoading ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Creating...
+          </>
+        ) : (
+          "Create Block"
+        )}
+      </Button>
+    </form>
+  );
+}
+
+function AddFlatForm({ blocks, onSubmit, isLoading }) {
+  const [formData, setFormData] = useState({
+    number: "",
+    blockId: "",
+    floor: "",
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit({
+      number: formData.number,
+      blockId: formData.blockId,
+      floor: parseInt(formData.floor),
+    });
+    setFormData({ number: "", blockId: "", floor: "" });
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <Label htmlFor="block">Block</Label>
+        <Select
+          value={formData.blockId}
+          onValueChange={(value) => setFormData({ ...formData, blockId: value })}
+        >
+          <SelectTrigger data-testid="select-block">
+            <SelectValue placeholder="Select block" />
+          </SelectTrigger>
+          <SelectContent>
+            {blocks.map((block) => (
+              <SelectItem key={block.id} value={String(block.id)}>
+                {block.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label htmlFor="number">Flat Number</Label>
+        <Input
+          id="number"
+          placeholder="Enter flat number (e.g., 101)"
+          value={formData.number}
+          onChange={(e) => setFormData({ ...formData, number: e.target.value })}
+          required
+          data-testid="input-flat-number"
+        />
+      </div>
+      <div>
+        <Label htmlFor="floor">Floor</Label>
+        <Input
+          id="floor"
+          type="number"
+          placeholder="Enter floor number"
+          value={formData.floor}
+          onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
+          required
+          data-testid="input-floor"
+        />
+      </div>
+      <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-create-flat">
+        {isLoading ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Creating...
+          </>
+        ) : (
+          "Create Flat"
+        )}
+      </Button>
+    </form>
+  );
+}
