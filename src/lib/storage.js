@@ -23,16 +23,20 @@ class StorageService {
   }
 
   async registerResidency(data) {
-    const residencyRef = await addDoc(collection(db, "residencies"), {
+    // Use the residency name as the document ID for cleaner URLs and easier lookup
+    const residencyId = data.residencyName; // or keep auto-ID but ensure name is unique
+    
+    // Using setDoc with name as ID to align with "Rajhansh Residency" example in prompt
+    await setDoc(doc(db, "residencies", residencyId), {
       name: data.residencyName,
       adminUsername: data.adminUsername,
       adminPassword: data.adminPassword, 
       adminPhone: data.adminPhone || null,
       createdAt: new Date().toISOString(),
+      serviceStatus: "ON", // Default service status
+      ownerId: "jaydeep", // Default owner linking
     });
     
-    const residencyId = residencyRef.id;
-
     return {
       id: residencyId,
       name: data.residencyName,

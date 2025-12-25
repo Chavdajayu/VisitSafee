@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /owners/{ownerId} {
+      allow read, write: if request.auth != null && request.auth.uid == ownerId;
+    }
+    match /residencies/{residencyId} {
+      allow read, write: if request.auth != null && request.auth.uid == ownerId;
+    }
+    // Keep existing rules or default strict
+    match /{document=**} {
+      allow read, write: if true; // WARNING: Open for dev, tighten for prod
+    }
+  }
+}
