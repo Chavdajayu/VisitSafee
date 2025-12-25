@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { useLocation } from "wouter";
 import { storage } from "../lib/storage";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -7,27 +6,39 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [role, setRole] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
 
-  // ✅ RESTORE SESSION ON PAGE REFRESH
+  // Restore session from localStorage on mount
   useEffect(() => {
     let mounted = true;
 
     const restoreSession = async () => {
       try {
-        const currentUser = await storage.getCurrentUser();
+        const sessionStr = localStorage.getItem("society_user_session");
+        let currentUser = null;
+        if (sessionStr) {
+          try {
+            const session = JSON.parse(sessionStr);
+            if (session && session.loggedIn) {
+              currentUser = await storage.getCurrentUser();
+            }
+          } catch {
+            currentUser = null;
+          }
+        }
         if (mounted) {
           setUser(currentUser);
+          setRole(currentUser?.role ?? null);
           queryClient.setQueryData(["/api/user"], currentUser);
         }
       } catch (err) {
-        console.error("Session restore failed:", err);
         if (mounted) setUser(null);
+        if (mounted) setRole(null);
       } finally {
-        if (mounted) setIsLoading(false);
+        if (mounted) setLoading(false);
       }
     };
 
@@ -38,29 +49,15 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  // ✅ LOGIN
+  // Login: persist session and update context state (no navigation here)
   const login = async (credentials, options = {}) => {
     setIsLoggingIn(true);
     try {
       const loggedInUser = await storage.login(credentials);
 
       setUser(loggedInUser);
+      setRole(loggedInUser?.role ?? null);
       queryClient.setQueryData(["/api/user"], loggedInUser);
-
-      const societyPath = loggedInUser.residencyName
-        ? `/${encodeURIComponent(loggedInUser.residencyName)}`
-        : "/unknown-society";
-
-      if (loggedInUser.role === "admin") {
-        setLocation(`${societyPath}/admin`);
-      } else if (loggedInUser.role === "guard") {
-        setLocation(`${societyPath}/guard`);
-      } else {
-        const flatPath = loggedInUser.flatNumber
-          ? `/${loggedInUser.flatNumber}`
-          : "";
-        setLocation(`${societyPath}/resident${flatPath}`);
-      }
 
       options.onSuccess?.(loggedInUser);
     } catch (error) {
@@ -71,17 +68,17 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // ✅ LOGOUT
+  // Logout: clear session and context
   const logout = async () => {
     await storage.logout();
     setUser(null);
+    setRole(null);
     queryClient.setQueryData(["/api/user"], null);
-    setLocation("/login");
   };
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, isLoggingIn, login, logout }}
+      value={{ user, role, loading, isLoggingIn, login, logout }}
     >
       {children}
     </AuthContext.Provider>

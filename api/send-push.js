@@ -76,7 +76,17 @@ export default async function handler(req, res) {
           tokens.push(userData.fcmToken);
         }
       });
-      // ... (fetch flat/block details)
+      const flatDoc = await db.collection("residencies").doc(residencyId).collection("flats").doc(String(flatId)).get();
+      if (flatDoc.exists) {
+        const fd = flatDoc.data();
+        flatNumber = String(fd.number || "");
+        if (fd.blockId) {
+          const blockDoc = await db.collection("residencies").doc(residencyId).collection("blocks").doc(fd.blockId).get();
+          if (blockDoc.exists) {
+            blockName = blockDoc.data().name || "";
+          }
+        }
+      }
     }
 
     tokens = [...new Set(tokens)];
@@ -110,6 +120,8 @@ export default async function handler(req, res) {
         residencyId: String(residencyId || ""),
         visitorName: String(data.visitorName || ""),
         flatId: String(data.flatId || ""),
+        block: String(blockName || ""),
+        flat: String(flatNumber || ""),
         actionUrlApprove: actionData.actionUrlApprove,
         actionUrlReject: actionData.actionUrlReject
       },

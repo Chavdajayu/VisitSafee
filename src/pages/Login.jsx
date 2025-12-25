@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth.jsx";
+import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -18,10 +19,11 @@ import { loginSchema } from "@/lib/types";
 import { storage } from "@/lib/storage";
 
 export default function Login() {
-  const { user, isLoading, login, isLoggingIn } = useAuth();
+  const { user, role, loading, login, isLoggingIn } = useAuth();
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -29,15 +31,19 @@ export default function Login() {
     );
   }
 
-  if (user) {
+  useEffect(() => {
+    if (loading) return;
+    if (!user) return;
     const societyPath = user.residencyName ? `/${encodeURIComponent(user.residencyName)}` : "";
-    if (user.role === 'admin') return <Redirect to={`${societyPath}/admin`} />;
-    if (user.role === 'guard') return <Redirect to={`${societyPath}/guard`} />;
-    if (user.role === 'resident') {
-        const flatPath = user.flatNumber ? `/${user.flatNumber}` : "";
-        return <Redirect to={`${societyPath}/resident${flatPath}`} />;
+    if (role === "admin") {
+      setLocation(`${societyPath}/admin`);
+    } else if (role === "guard") {
+      setLocation(`${societyPath}/guard`);
+    } else {
+      const flatPath = user.flatNumber ? `/${user.flatNumber}` : "";
+      setLocation(`${societyPath}/resident${flatPath}`);
     }
-  }
+  }, [user, role, loading, setLocation]);
   
   const { data: residencies, isLoading: isLoadingResidencies } = useQuery({
     queryKey: ["residencies"],

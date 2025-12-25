@@ -1,13 +1,17 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from "@/hooks/use-auth.jsx";
 import { messaging } from '@/lib/firebase';
 import { getToken, onMessage } from 'firebase/messaging';
 import { storage } from '@/lib/storage';
 import { useToast } from "@/hooks/use-toast";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export function NotificationManager() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [active, setActive] = useState(null);
+  const [seen, setSeen] = useState(() => new Set());
 
   useEffect(() => {
     // Only request if user is logged in
@@ -72,14 +76,26 @@ export function NotificationManager() {
 
     requestPermission();
 
-    // Foreground messages: use toast only to avoid duplicate native notifications
+    // Foreground messages
     if (messaging) {
       const unsubscribe = onMessage(messaging, async (payload) => {
         try {
-          toast({
-            title: payload.data?.title || 'VisitSafe',
-            description: payload.data?.body || 'New notification',
-          });
+          const rid = payload.data?.requestId;
+          if (rid && !seen.has(rid)) {
+            setSeen(prev => {
+              const n = new Set(prev);
+              n.add(rid);
+              return n;
+            });
+            setActive({
+              requestId: rid,
+              visitorName: payload.data?.visitorName,
+              phone: payload.data?.phone,
+              purpose: payload.data?.purpose,
+              block: payload.data?.block,
+              flat: payload.data?.flat
+            });
+          }
         } catch (e) {
           // ignore
         }
@@ -88,5 +104,40 @@ export function NotificationManager() {
     }
   }, [user, toast]);
 
-  return null;
+  const act = async (action) => {
+    if (!active) return;
+    try {
+      const res = await fetch(`/api/visitor-action?action=${action}&residencyId=${user?.residencyId}&requestId=${active.requestId}`, { method: "POST" });
+      if (res.ok) setActive(null);
+    } catch {}
+  };
+
+  if (!active) return null;
+
+  return (
+    <div className="fixed inset-x-0 top-20 z-50 px-4">
+      <Card className="w-full bg-white shadow-lg border rounded-xl p-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="space-y-1">
+            <div className="text-slate-900 font-semibold text-base">
+              {active.visitorName}
+            </div>
+            <div className="text-slate-600 text-sm">
+              {active.phone}
+            </div>
+            <div className="text-slate-700 text-sm">
+              {active.purpose}
+            </div>
+            <div className="text-slate-800 text-sm font-medium">
+              {active.block ? `${active.block} • Flat ${active.flat}` : (active.flat ? `Flat ${active.flat}` : "")}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => act("approve")}>Approve</Button>
+            <Button variant="destructive" onClick={() => act("reject")}>Reject</Button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
 }

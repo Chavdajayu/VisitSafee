@@ -31,9 +31,9 @@ function ProtectedRoute({
   role,
   params
 }) {
-  const { user, isLoading } = useAuth();
+  const { user, loading } = useAuth();
 
-  if (isLoading) {
+  if (loading) {
     return <LoadingSpinner />;
   }
 
@@ -81,8 +81,8 @@ function ProtectedRoute({
 }
 
 function LegacyRoute({ role, pathSuffix = "" }) {
-  const { user, isLoading } = useAuth();
-  if (isLoading) return <LoadingSpinner />;
+  const { user, loading } = useAuth();
+  if (loading) return <LoadingSpinner />;
   
   if (user && (user.role === role || role === 'any')) {
       const societyPath = user.residencyName ? `/${encodeURIComponent(user.residencyName)}` : "";
@@ -98,8 +98,8 @@ function Router() {
     <Suspense fallback={<LoadingSpinner />}>
       <Switch>
         <Route path="/" component={() => {
-          const { user, isLoading } = useAuth();
-          if (isLoading) return <LoadingSpinner />;
+          const { user, loading } = useAuth();
+          if (loading) return <LoadingSpinner />;
           if (user) {
             const societyPath = user.residencyName ? `/${encodeURIComponent(user.residencyName)}` : "";
             if (user.role === 'admin') return <Redirect to={`${societyPath}/admin`} />;

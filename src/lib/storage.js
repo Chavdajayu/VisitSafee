@@ -6,6 +6,7 @@ import { db } from "./firebase";
 import { signOut } from "firebase/auth";
 import { auth } from "./firebase";
 import bcrypt from "bcryptjs";
+import { normalizeBlock } from "./utils";
 
 const getEmail = (username, residencyId) => {
   return `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}.${residencyId}@visitsafe.local`;
@@ -282,19 +283,13 @@ class StorageService {
     const snapshot = await getDocs(q);
     let requests = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    if (dbUser.role === "resident") {
-        const residentDoc = await getDoc(doc(db, "residencies", dbUser.residencyId, "residents", dbUser.username));
-        if (residentDoc.exists()) {
-            const residentData = residentDoc.data();
-            requests = requests.filter(r => r.flatId === residentData.flatId);
-        }
-    }
-
-    const blocks = await this.getBlocks();
+    // Load metadata for resolving relations
+    const blocks = await this.getBlocks(dbUser.residencyId);
     const flatsSnapshot = await getDocs(collection(db, "residencies", dbUser.residencyId, "flats"));
     const flats = flatsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    return requests.map(req => {
+    // Resolve details
+    const detailedRequests = requests.map(req => {
         const flat = flats.find(f => f.id === req.flatId);
         if (!flat) return null;
         const block = blocks.find(b => b.id === flat.blockId);
@@ -305,6 +300,39 @@ class StorageService {
         flat: { ...flat, block }
         };
     }).filter(Boolean);
+
+    // Filter for Resident
+    if (dbUser.role === "resident") {
+        const residentDoc = await getDoc(doc(db, "residencies", dbUser.residencyId, "residents", dbUser.username));
+        if (residentDoc.exists()) {
+            const residentData = residentDoc.data();
+            
+            return detailedRequests.filter(req => {
+                // 1. Match by Flat ID (Standard)
+                if (req.flatId && residentData.flatId && req.flatId === residentData.flatId) {
+                    return true;
+                }
+
+                // 2. Match by Block & Flat Name (Fallback for PDF Imports)
+                let reqBlock = req.flat?.block?.name?.toUpperCase();
+                const reqFlat = req.flat?.number?.toUpperCase();
+                let resBlock = residentData.block?.toUpperCase();
+                const resFlat = residentData.flat?.toUpperCase();
+
+                // Normalize Block Name (Remove "BLOCK", "TOWER", etc.)
+                if (reqBlock) reqBlock = reqBlock.replace(/^(BLOCK|TOWER|WING)\s+/, "").trim();
+                if (resBlock) resBlock = resBlock.replace(/^(BLOCK|TOWER|WING)\s+/, "").trim();
+
+                if (reqBlock && reqFlat && resBlock && resFlat) {
+                    return reqBlock === resBlock && reqFlat === resFlat;
+                }
+
+                return false;
+            });
+        }
+    }
+
+    return detailedRequests;
   }
 
   async getAllVisitorRequestsWithDetails() {
@@ -389,7 +417,7 @@ class StorageService {
     const docRef = doc(db, "residencies", user.residencyId, "visitor_requests", id);
     await updateDoc(docRef, { 
       status,
-      updatedAt: new Date().toISOString(),
+      updatedAt: serverTimestamp(),
       actionBy: user.username
     });
     return id;
@@ -451,12 +479,42 @@ class StorageService {
 
   subscribeToVisitorRequests(callback, filter) {
     let snapshotUnsubscribe = null;
+    let isSubscribed = true; // Prevent race conditions
+    const logPrefix = "[LiveListener]";
+
+    console.log(`${logPrefix} Initializing subscription...`);
 
     this.getCurrentUser().then(async (dbUser) => {
+      if (!isSubscribed) {
+          console.log(`${logPrefix} Subscribed cancelled before user load.`);
+          return;
+      }
+
       if (!dbUser) {
+        console.warn(`${logPrefix} No user found, returning empty.`);
         callback([]);
         return;
       }
+
+      console.log(`${logPrefix} User identified:`, dbUser.username, dbUser.role);
+
+      // Pre-fetch Resident Data if needed (to avoid async inside snapshot)
+      let residentData = null;
+      if (dbUser.role === "resident") {
+          try {
+             const residentDoc = await getDoc(doc(db, "residencies", dbUser.residencyId, "residents", dbUser.username));
+             if (residentDoc.exists()) {
+                 residentData = residentDoc.data();
+                 console.log(`${logPrefix} Resident profile loaded:`, residentData.block, residentData.flat);
+             } else {
+                 console.error(`${logPrefix} Resident profile NOT found in Firestore!`);
+             }
+          } catch (e) {
+             console.error(`${logPrefix} Error fetching resident profile:`, e);
+          }
+      }
+
+      if (!isSubscribed) return;
 
       let q = query(
         collection(db, "residencies", dbUser.residencyId, "visitor_requests"), 
@@ -467,24 +525,26 @@ class StorageService {
         q = query(q, where("status", "==", filter.status));
       }
 
+      console.log(`${logPrefix} Connecting to Firestore...`);
+
       snapshotUnsubscribe = onSnapshot(q, async (snapshot) => {
+        if (!isSubscribed) return;
+
+        console.log(`${logPrefix} Snapshot received! Docs: ${snapshot.docs.length}`);
+        
         let requests = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
-        if (dbUser.role === "resident") {
-           const residentDoc = await getDoc(doc(db, "residencies", dbUser.residencyId, "residents", dbUser.username));
-           if (residentDoc.exists()) {
-             const residentData = residentDoc.data();
-             requests = requests.filter(r => r.flatId === residentData.flatId);
-           }
-        }
-
-        const blocks = await this.getBlocks();
+        // Load metadata for resolving relations
+        const blocks = await this.getBlocks(dbUser.residencyId);
         const flatsSnapshot = await getDocs(collection(db, "residencies", dbUser.residencyId, "flats"));
         const flats = flatsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
+        if (!isSubscribed) return;
+
+        // Resolve details & Filter
         const detailedRequests = requests.map(req => {
           const flat = flats.find(f => f.id === req.flatId);
-          if (!flat) return null;
+          if (!flat) return null; // Orphaned request
           const block = blocks.find(b => b.id === flat.blockId);
           if (!block) return null;
           
@@ -494,11 +554,43 @@ class StorageService {
           };
         }).filter(Boolean);
 
-        callback(detailedRequests);
+        let finalRequests = detailedRequests;
+
+        if (dbUser.role === "resident" && residentData) {
+           finalRequests = detailedRequests.filter(req => {
+               // 1. Match by Flat ID (if available on both)
+               if (req.flatId && residentData.flatId && req.flatId === residentData.flatId) {
+                   return true;
+               }
+
+               // 2. Match by Block & Flat Name (Fallback for PDF Imports)
+               let reqBlock = req.flat?.block?.name?.toUpperCase();
+               const reqFlat = req.flat?.number?.toUpperCase();
+               let resBlock = residentData.block?.toUpperCase();
+               const resFlat = residentData.flat?.toUpperCase();
+
+               // Normalize Block Name (Remove "BLOCK", "TOWER", etc.)
+               if (reqBlock) reqBlock = reqBlock.replace(/^(BLOCK|TOWER|WING)\s+/, "").trim();
+               if (resBlock) resBlock = resBlock.replace(/^(BLOCK|TOWER|WING)\s+/, "").trim();
+
+               if (reqBlock && reqFlat && resBlock && resFlat) {
+                   return reqBlock === resBlock && reqFlat === resFlat;
+               }
+
+               return false;
+           });
+        }
+
+        console.log(`${logPrefix} Filtered requests for user: ${finalRequests.length}`);
+        callback(finalRequests);
+      }, (error) => {
+          console.error(`${logPrefix} Firestore Listener Error:`, error);
       });
     });
 
     return () => {
+      console.log(`${logPrefix} Unsubscribing...`);
+      isSubscribed = false;
       if (snapshotUnsubscribe) snapshotUnsubscribe();
     };
   }
@@ -550,10 +642,21 @@ class StorageService {
                 let flatDetails;
                 
                 if (user.role === "resident") {
-                    const flat = flats.find(f => f.id === user.flatId);
-                    if (flat) {
-                        const block = blocks.find(b => b.id === flat.blockId);
-                        if (block) flatDetails = { ...flat, block };
+                    // 1. Try relational lookup (flatId)
+                    if (user.flatId) {
+                        const flat = flats.find(f => f.id === user.flatId);
+                        if (flat) {
+                            const block = blocks.find(b => b.id === flat.blockId);
+                            if (block) flatDetails = { ...flat, block };
+                        }
+                    }
+
+                    // 2. Fallback to direct fields (PDF Import)
+                    if (!flatDetails && user.block && user.flat) {
+                        flatDetails = {
+                            number: user.flat,
+                            block: { name: normalizeBlock(user.block) || user.block }
+                        };
                     }
                 }
                 
@@ -747,6 +850,83 @@ class StorageService {
 
   // === USERS (Admin Actions) ===
 
+  async updateUser(originalUsername, role, data) {
+    const currentUser = await this.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') throw new Error("Unauthorized");
+
+    const residencyId = currentUser.residencyId;
+
+    if (role === 'admin') {
+      // Update Admin
+      const updates = { updatedAt: serverTimestamp() };
+      if (data.username) updates.adminUsername = data.username;
+      if (data.password) updates.adminPassword = data.password;
+      if (data.phone) updates.adminPhone = data.phone;
+      
+      await updateDoc(doc(db, "residencies", residencyId), updates);
+      return;
+    }
+
+    const collectionName = role === 'guard' ? 'guards' : 'residents';
+    const oldDocRef = doc(db, "residencies", residencyId, collectionName, originalUsername);
+
+    if (data.username && data.username !== originalUsername) {
+       // Rename User (Transactional)
+       const newDocRef = doc(db, "residencies", residencyId, collectionName, data.username);
+       const newDocSnap = await getDoc(newDocRef);
+       if (newDocSnap.exists()) throw new Error("Username already taken");
+       
+       const oldDocSnap = await getDoc(oldDocRef);
+       if (!oldDocSnap.exists()) throw new Error("User not found");
+       const oldData = oldDocSnap.data();
+       
+       const newData = {
+         ...oldData,
+         username: data.username,
+         updatedAt: serverTimestamp()
+       };
+       if (data.password) newData.password = data.password;
+       if (data.phone !== undefined) newData.phone = data.phone;
+      if (role === 'resident') {
+         if (data.flatId) newData.flatId = data.flatId;
+         const nb = data.block ? normalizeBlock(data.block) : null;
+         if (data.block && !nb) throw new Error("Invalid block value");
+         if (nb) newData.block = nb;
+         if (data.flat) newData.flat = String(data.flat);
+      }
+       
+       const batch = writeBatch(db);
+       batch.set(newDocRef, newData);
+       batch.delete(oldDocRef);
+       await batch.commit();
+       
+    } else {
+       // Update existing
+       const updates = { updatedAt: serverTimestamp() };
+       if (data.password) updates.password = data.password;
+       if (data.phone !== undefined) updates.phone = data.phone;
+      if (role === 'resident') {
+         if (data.flatId) updates.flatId = data.flatId;
+         const nb = data.block ? normalizeBlock(data.block) : null;
+         if (data.block && !nb) throw new Error("Invalid block value");
+         if (nb) updates.block = nb;
+         if (data.flat) updates.flat = String(data.flat);
+      }
+       
+       await updateDoc(oldDocRef, updates);
+    }
+  }
+
+  async deleteUser(username, role) {
+      const currentUser = await this.getCurrentUser();
+      if (!currentUser || currentUser.role !== 'admin') throw new Error("Unauthorized");
+      
+      if (role === 'admin') throw new Error("Cannot delete admin account");
+      
+      const collectionName = role === 'guard' ? 'guards' : 'residents';
+      await deleteDoc(doc(db, "residencies", currentUser.residencyId, collectionName, username));
+  }
+
   async getAllUsersWithDetails() {
     const user = await this.getCurrentUser();
     if (!user || user.role !== 'admin') return [];
@@ -783,12 +963,23 @@ class StorageService {
       let flatDetails;
       
       if (u.role === "resident") {
-        const flat = flats.find(f => f.id === u.flatId);
-        if (flat) {
-          const block = blocks.find(b => b.id === flat.blockId);
-          if (block) {
-            flatDetails = { ...flat, block };
-          }
+        // 1. Try relational lookup (flatId)
+        if (u.flatId) {
+            const flat = flats.find(f => f.id === u.flatId);
+            if (flat) {
+              const block = blocks.find(b => b.id === flat.blockId);
+              if (block) {
+                flatDetails = { ...flat, block };
+              }
+            }
+        }
+
+        // 2. Fallback to direct fields (PDF Import)
+                    if (!flatDetails && u.block && u.flat) {
+            flatDetails = {
+                number: u.flat,
+                block: { name: normalizeBlock(u.block) || u.block }
+            };
         }
       }
       
@@ -807,11 +998,30 @@ class StorageService {
     const snap = await getDocs(q);
     if (!snap.empty) throw new Error("Username already taken");
 
+    let blockName = null;
+    let flatNumber = null;
+    if (data.flatId) {
+      const flatDoc = await getDoc(doc(db, "residencies", user.residencyId, "flats", data.flatId));
+      if (flatDoc.exists()) {
+        const flatData = flatDoc.data();
+        flatNumber = String(flatData.number);
+        if (flatData.blockId) {
+          const blockDoc = await getDoc(doc(db, "residencies", user.residencyId, "blocks", flatData.blockId));
+          if (blockDoc.exists()) {
+            const bName = blockDoc.data().name;
+            blockName = normalizeBlock(bName) || bName;
+          }
+        }
+      }
+    }
+
     await setDoc(doc(residentsRef, data.username), {
       username: data.username,
       password: data.password, 
       phone: data.phone || null,
       flatId: data.flatId,
+      block: blockName || null,
+      flat: flatNumber || null,
       active: true,
       createdAt: new Date().toISOString()
     });
@@ -901,11 +1111,14 @@ class StorageService {
 
             // Add to batch
             const ref = doc(collection(db, "residencies", user.residencyId, "residents"), username);
+            const normalizedBlockName = normalizeBlock(block.name) || block.name;
             batch.set(ref, {
                 username,
                 password, 
                 phone: entry.phone || null,
                 flatId: flat.id,
+                block: normalizedBlockName,
+                flat: String(flat.number),
                 active: true,
                 createdAt: new Date().toISOString()
             });

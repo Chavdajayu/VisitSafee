@@ -13,6 +13,7 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
+const __shown = new Set();
 
 // Background message handler
 messaging.onBackgroundMessage((payload) => {
@@ -21,6 +22,13 @@ messaging.onBackgroundMessage((payload) => {
   const { title, body, icon } = payload.notification || {};
   const { visitorName, flat, requestId, actionUrlApprove, actionUrlReject } = payload.data || {};
 
+  if (requestId && __shown.has(requestId)) {
+    return;
+  }
+  if (requestId) {
+    __shown.add(requestId);
+  }
+
   const notificationTitle = title || "New Visitor Request";
   const notificationOptions = {
     body: body || `${visitorName} wants to visit`,
@@ -28,6 +36,8 @@ messaging.onBackgroundMessage((payload) => {
     badge: "/icons/badge.png",
     requireInteraction: true,
     vibrate: [200, 100, 200],
+    tag: requestId ? `req-${requestId}` : undefined,
+    renotify: false,
     data: {
         requestId,
         actionUrlApprove,

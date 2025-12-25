@@ -39,9 +39,12 @@ export default function ResidentDashboard() {
   return (
     <Layout>
       <div className="mb-8">
-        <h1 className="text-2xl font-display font-bold text-slate-900">{user?.residencyName} Resident Dashboard</h1>
+        <h1 className="text-2xl font-display font-bold text-slate-900">Welcome, {user?.name || user?.username}</h1>
         <p className="text-slate-500">
-          Manage entry requests for {user?.flatNumber ? `Flat ${user.flatNumber}` : "your flat"} in {user?.residencyName}.
+          {(() => {
+            const flatDisplay = user?.flatNumber || user?.flat;
+            return `Manage entry request for ${flatDisplay ? `Flat ${flatDisplay}` : "Flat"} in ${user?.residencyName}.`;
+          })()}
         </p>
       </div>
 

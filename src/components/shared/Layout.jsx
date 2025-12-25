@@ -41,10 +41,10 @@ export function Layout({ children }) {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="hidden md:flex items-center gap-3 px-3 py-1.5 bg-slate-100 rounded-full">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100">
               {getRoleIcon()}
-              <span className="text-sm font-medium capitalize text-slate-700">
-                {user?.name} ({user?.role})
+              <span className="text-sm font-semibold text-emerald-700">
+                {(user?.name || user?.username)} ({user?.role})
               </span>
             </div>
 
