@@ -23,27 +23,22 @@ class StorageService {
   }
 
   async registerResidency(data) {
-    // Use the residency name as the document ID for cleaner URLs and easier lookup
-    const residencyId = data.residencyName; // or keep auto-ID but ensure name is unique
-    
-    // Using setDoc with name as ID to align with "Rajhansh Residency" example in prompt
-    await setDoc(doc(db, "residencies", residencyId), {
-      name: data.residencyName,
-      adminUsername: data.adminUsername,
-      adminPassword: data.adminPassword, 
-      adminPhone: data.adminPhone || null,
-      createdAt: new Date().toISOString(),
-      serviceStatus: "ON", // Default service status
-      ownerId: "jaydeep", // Default owner linking
+    // Use the API to ensure secure owner update (mimicking Cloud Function trigger)
+    const response = await fetch('/api/registerResidency', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
     });
-    
-    return {
-      id: residencyId,
-      name: data.residencyName,
-      adminUsername: data.adminUsername,
-      adminPhone: data.adminPhone,
-      createdAt: new Date().toISOString()
-    };
+
+    if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to register residency");
+    }
+
+    const result = await response.json();
+    return result.data;
   }
 
   // === AUTH ===

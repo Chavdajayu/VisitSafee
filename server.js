@@ -50,6 +50,7 @@ app.get('/api/ownerResidencies', adaptHandler(ownerResidenciesHandler));
 app.post('/api/toggleService', adaptHandler(toggleServiceHandler));
 app.post('/api/createOwner', adaptHandler(createOwnerHandler));
 app.get('/api/residencyStatus', adaptHandler(residencyStatusHandler));
+app.post('/api/registerResidency', adaptHandler(registerResidencyHandler));
 
 const PORT = 3000;
 app.listen(PORT, () => {
