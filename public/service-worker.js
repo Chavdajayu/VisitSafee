@@ -13,11 +13,20 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
+
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(clients.claim());
+});
+
 const __shown = new Set();
 
 // Background message handler
 messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message ', payload);
+  console.log('[service-worker.js] Received background message ', payload);
   
   const { title, body, icon } = payload.notification || {};
   const { visitorName, flat, requestId, actionUrlApprove, actionUrlReject } = payload.data || {};
@@ -37,11 +46,12 @@ messaging.onBackgroundMessage((payload) => {
     requireInteraction: true,
     vibrate: [200, 100, 200],
     tag: requestId ? `req-${requestId}` : undefined,
-    renotify: false,
+    renotify: true, // Renotify if the same tag is used (e.g., update)
     data: {
         requestId,
         actionUrlApprove,
-        actionUrlReject
+        actionUrlReject,
+        url: '/' // Default URL to open
     },
     actions: [
         { action: "APPROVE", title: "Approve" },
@@ -56,35 +66,55 @@ messaging.onBackgroundMessage((payload) => {
 self.addEventListener("notificationclick", event => {
    event.notification.close();
    
-   if (event.action === "APPROVE") {
-     if (event.notification.data.actionUrlApprove) {
-         fetch(event.notification.data.actionUrlApprove, { method: "POST" })
-            .then(response => {
+   const { actionUrlApprove, actionUrlReject, url } = event.notification.data || {};
+
+   const handleAction = async () => {
+       try {
+           if (event.action === "APPROVE" && actionUrlApprove) {
+                const response = await fetch(actionUrlApprove, { method: "POST" });
                 if (response.ok) {
                     console.log("Approved via notification");
-                    // Optionally open window or show toast
+                    // Optionally show a confirmation notification
+                    await self.registration.showNotification("Visitor Approved", {
+                        body: "Access granted successfully.",
+                        icon: "/icons/check.png",
+                        timeout: 3000
+                    });
+                } else {
+                    throw new Error("Approval failed");
                 }
-            });
-     }
-   } else if (event.action === "REJECT") {
-     if (event.notification.data.actionUrlReject) {
-         fetch(event.notification.data.actionUrlReject, { method: "POST" })
-             .then(response => {
+           } else if (event.action === "REJECT" && actionUrlReject) {
+                const response = await fetch(actionUrlReject, { method: "POST" });
                 if (response.ok) {
                     console.log("Rejected via notification");
+                    await self.registration.showNotification("Visitor Rejected", {
+                        body: "Access denied.",
+                        icon: "/icons/cross.png",
+                        timeout: 3000
+                    });
+                } else {
+                    throw new Error("Rejection failed");
                 }
-            });
-     }
-   } else {
-     // Default click (open app)
-     event.waitUntil(
-        clients.matchAll({ type: 'window' }).then(windowClients => {
-            if (windowClients.length > 0) {
-                windowClients[0].focus();
-            } else {
-                clients.openWindow('/');
-            }
-        })
-     );
-   }
+           } else {
+             // Default click (open app)
+             const windowClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+             for (let client of windowClients) {
+                 if (client.url.includes(self.registration.scope) && 'focus' in client) {
+                     return client.focus();
+                 }
+             }
+             if (clients.openWindow) {
+                 return clients.openWindow(url || '/');
+             }
+           }
+       } catch (error) {
+           console.error("Notification click error:", error);
+           // Fallback: Open app to handle manually
+           if (clients.openWindow) {
+                return clients.openWindow('/');
+           }
+       }
+   };
+
+   event.waitUntil(handleAction());
 });

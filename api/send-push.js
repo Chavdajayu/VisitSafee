@@ -139,9 +139,80 @@ export default async function handler(req, res) {
         actionUrlReject: actionData.actionUrlReject
       },
       tokens: tokens,
+      android: {
+        priority: "high",
+        notification: {
+          priority: "max",
+          channelId: "visitor_requests",
+          visibility: "public",
+          defaultSound: true,
+          defaultVibrateTimings: true
+        }
+      },
+      apns: {
+        headers: {
+          "apns-priority": "10"
+        },
+        payload: {
+          aps: {
+            alert: {
+              title: title || "New Visitor Request",
+              body: body || "You have a new visitor.",
+            },
+            sound: "default",
+            badge: 1,
+            "content-available": 1
+          }
+        }
+      }
     };
 
-    const response = await admin.messaging().sendMulticast(message);
+    // Helper for retry logic
+    const sendWithRetry = async (msg, maxRetries = 2) => {
+        let currentTokens = [...msg.tokens];
+        let finalSuccessCount = 0;
+        let finalFailureCount = 0;
+        let finalResponses = [];
+
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            if (currentTokens.length === 0) break;
+
+            if (attempt > 0) {
+                console.log(`Retry attempt ${attempt} for ${currentTokens.length} tokens...`);
+                await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            }
+
+            const batchResponse = await admin.messaging().sendMulticast({ ...msg, tokens: currentTokens });
+            
+            finalSuccessCount += batchResponse.successCount;
+            
+            const retryTokens = [];
+            batchResponse.responses.forEach((resp, idx) => {
+                if (!resp.success) {
+                    const errCode = resp.error?.code;
+                    // Only retry for internal errors or unavailable service
+                    // Do NOT retry for invalid tokens
+                    if (errCode === 'messaging/internal-error' || errCode === 'messaging/server-unavailable') {
+                        retryTokens.push(currentTokens[idx]);
+                    } else {
+                        console.error(`Failed to send to token ${currentTokens[idx]}:`, resp.error);
+                        finalFailureCount++;
+                    }
+                }
+            });
+            
+            currentTokens = retryTokens;
+        }
+        
+        // Treat remaining tokens as failed after max retries
+        finalFailureCount += currentTokens.length;
+
+        return { successCount: finalSuccessCount, failureCount: finalFailureCount };
+    };
+
+    const response = await sendWithRetry(message);
+    
+    console.log(`Push result for request ${data.requestId}: Success=${response.successCount}, Failure=${response.failureCount}`);
 
     // 2. Mark as Sent
     if (requestRef && response.successCount > 0) {

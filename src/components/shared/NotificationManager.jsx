@@ -19,24 +19,39 @@ export function NotificationManager() {
 
     const setupToken = async () => {
         // Wait for service worker to be ready
-        if (!('serviceWorker' in navigator)) return;
+        if (!('serviceWorker' in navigator)) {
+            console.error("Service Worker not supported in this browser");
+            return;
+        }
         
         try {
             const registration = await navigator.serviceWorker.ready;
             
             if (messaging) {
                  const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+                 if (!vapidKey) {
+                    console.error("Missing VITE_FIREBASE_VAPID_KEY");
+                    return;
+                 }
+
                  const token = await getToken(messaging, { 
                     serviceWorkerRegistration: registration,
                     vapidKey
                  });
                  if (token) {
-                     // console.log('FCM Token:', token);
+                     console.log('FCM Token generated successfully');
                      await storage.saveUserToken(token);
+                 } else {
+                     console.warn('No FCM token generated');
                  }
             }
         } catch (error) {
             console.error('Error setting up notification token:', error);
+            toast({
+                title: "Notification Error",
+                description: "Failed to connect to notification service. Please try reloading.",
+                variant: "destructive"
+            });
         }
     };
 
