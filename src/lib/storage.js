@@ -177,7 +177,7 @@ class StorageService {
         if (user.role === 'admin') {
             // Admin token save (optional, if we want admin notifications later)
             const residencyRef = doc(db, "residencies", user.residencyId);
-            await updateDoc(residencyRef, { fcmToken: token });
+            await updateDoc(residencyRef, { adminFcmToken: token });
         } else {
             const userRef = doc(db, "residencies", user.residencyId, collectionName, user.username);
             await updateDoc(userRef, { fcmToken: token });

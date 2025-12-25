@@ -59,7 +59,7 @@ export default async function handler(req, res) {
     let flatNumber;
     let blockName;
 
-    // Fetch tokens logic (same as before)
+    // Fetch tokens logic
     if (userId) {
       const userDoc = await db.collection("residencies").doc(residencyId).collection("residents").doc(userId).get();
       if (userDoc.exists) {
@@ -87,6 +87,19 @@ export default async function handler(req, res) {
           }
         }
       }
+    }
+
+    // Always fetch Admin Token for the residency to ensure admins/owners get notified
+    try {
+        const residencyDoc = await db.collection("residencies").doc(residencyId).get();
+        if (residencyDoc.exists) {
+            const rData = residencyDoc.data();
+            if (rData.adminFcmToken) {
+                tokens.push(rData.adminFcmToken);
+            }
+        }
+    } catch (e) {
+        console.warn("Failed to fetch admin token:", e);
     }
 
     tokens = [...new Set(tokens)];
