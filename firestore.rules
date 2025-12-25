@@ -1,15 +1,27 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Rule for owners collection
     match /owners/{ownerId} {
-      allow read, write: if request.auth != null && request.auth.uid == ownerId;
+      // Only allow the owner (based on username) to read and write their data
+      allow read, write: if request.auth != null && request.auth.token.username == resource.data.username;
     }
+
+    // Rule for residencies collection
     match /residencies/{residencyId} {
-      allow read, write: if request.auth != null && request.auth.uid == ownerId;
+      // Allow all authenticated users to read the residencies
+      allow read: if request.auth != null;
+      // Only allow the owner of a residency or an admin to update it
+      allow write: if request.auth != null && 
+        (resource.data.ownerId == request.auth.token.ownerId || request.auth.token.isAdmin == true);
     }
-    // Keep existing rules or default strict
+
+    // Catch-all rule for other documents
     match /{document=**} {
-      allow read, write: if true; // WARNING: Open for dev, tighten for prod
+      allow read: if request.auth != null;
+      allow write: if false;  // Prevent writes to any other documents not specified above
     }
   }
 }
