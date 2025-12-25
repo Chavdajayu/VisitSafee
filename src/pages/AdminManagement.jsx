@@ -1009,59 +1009,70 @@ function BulkResidentForm({ onCancel, onSuccess }) {
 
   if (status === 'success' && result) {
      return (
-        <div className="space-y-6">
-           <div className="text-center space-y-2">
-               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                   <CheckCircle className="w-8 h-8 text-green-600" />
+        <div className="space-y-6 max-h-[80vh] overflow-y-auto p-2">
+           <div className="text-center space-y-4 pt-4">
+               <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto shadow-sm">
+                   <CheckCircle className="w-10 h-10 text-green-600" />
                </div>
-               <h3 className="text-xl font-bold text-slate-900">Import Complete</h3>
-               <p className="text-slate-500">
-                   Successfully processed the resident list.
-               </p>
-           </div>
-
-           <div className="grid grid-cols-3 gap-4 text-center">
-               <div className="p-3 bg-green-50 rounded-lg border border-green-100">
-                   <div className="text-2xl font-bold text-green-700">{result.created}</div>
-                   <div className="text-xs text-green-600 font-medium uppercase">Created</div>
-               </div>
-               <div className="p-3 bg-amber-50 rounded-lg border border-amber-100">
-                   <div className="text-2xl font-bold text-amber-700">{result.skipped}</div>
-                   <div className="text-xs text-amber-600 font-medium uppercase">Skipped</div>
-               </div>
-               <div className="p-3 bg-red-50 rounded-lg border border-red-100">
-                   <div className="text-2xl font-bold text-red-700">{result.failed}</div>
-                   <div className="text-xs text-red-600 font-medium uppercase">Failed</div>
+               <div className="space-y-1">
+                   <h3 className="text-2xl font-bold text-slate-900">Import Complete</h3>
+                   <p className="text-slate-500 text-lg">
+                       Successfully processed the resident list.
+                   </p>
                </div>
            </div>
 
-           <div className="border rounded-lg overflow-hidden">
-               <div className="bg-slate-50 px-4 py-2 border-b text-sm font-medium flex justify-between items-center">
-                   <span>New Residents Preview</span>
-                   <Button variant="default" size="sm" onClick={downloadCredentialsPDF} className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
-                       <FileText className="w-3 h-3 mr-2" />
+           <div className="grid grid-cols-3 gap-6 text-center py-4">
+               <div className="p-4 bg-green-50 rounded-xl border border-green-100 shadow-sm">
+                   <div className="text-3xl font-bold text-green-700">{result.created}</div>
+                   <div className="text-sm text-green-600 font-bold uppercase tracking-wider mt-1">Created</div>
+               </div>
+               <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 shadow-sm">
+                   <div className="text-3xl font-bold text-amber-700">{result.skipped}</div>
+                   <div className="text-sm text-amber-600 font-bold uppercase tracking-wider mt-1">Skipped</div>
+               </div>
+               <div className="p-4 bg-red-50 rounded-xl border border-red-100 shadow-sm">
+                   <div className="text-3xl font-bold text-red-700">{result.failed}</div>
+                   <div className="text-sm text-red-600 font-bold uppercase tracking-wider mt-1">Failed</div>
+               </div>
+           </div>
+
+           <div className="border rounded-xl overflow-hidden shadow-sm bg-white">
+               <div className="bg-slate-50 px-6 py-4 border-b flex flex-col sm:flex-row justify-between items-center gap-4">
+                   <span className="font-semibold text-slate-900">New Residents Preview</span>
+                   <Button 
+                       variant="default" 
+                       size="sm" 
+                       onClick={downloadCredentialsPDF} 
+                       className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all hover:scale-105"
+                   >
+                       <FileText className="w-4 h-4 mr-2" />
                        Download Credentials PDF
                    </Button>
                </div>
-               <div className="max-h-60 overflow-y-auto">
+               <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
                    <table className="w-full text-sm text-left">
-                       <thead className="text-xs text-slate-500 bg-slate-50 sticky top-0">
+                       <thead className="text-xs text-slate-500 bg-slate-50 sticky top-0 uppercase tracking-wider font-semibold shadow-sm z-10">
                            <tr>
-                               <th className="px-4 py-2">Block</th>
-                               <th className="px-4 py-2">Flat</th>
-                               <th className="px-4 py-2">Name</th>
-                               <th className="px-4 py-2">Phone</th>
-                               <th className="px-4 py-2">Username</th>
+                               <th className="px-6 py-4 font-bold text-slate-600">Block</th>
+                               <th className="px-6 py-4 font-bold text-slate-600">Flat</th>
+                               <th className="px-6 py-4 font-bold text-slate-600">Name</th>
+                               <th className="px-6 py-4 font-bold text-slate-600">Phone</th>
+                               <th className="px-6 py-4 font-bold text-slate-600">Username</th>
                            </tr>
                        </thead>
-                       <tbody className="divide-y">
+                       <tbody className="divide-y divide-slate-100">
                            {result.residents.map((r, i) => (
-                               <tr key={i} className="hover:bg-slate-50">
-                                   <td className="px-4 py-2 font-medium">{r.block}</td>
-                                   <td className="px-4 py-2">{r.flat}</td>
-                                   <td className="px-4 py-2">{r.name}</td>
-                                   <td className="px-4 py-2 text-slate-500">{r.phone}</td>
-                                   <td className="px-4 py-2 text-blue-600">{r.username}</td>
+                               <tr key={i} className={`hover:bg-blue-50/50 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
+                                   <td className="px-6 py-3 font-medium text-slate-700">{r.block}</td>
+                                   <td className="px-6 py-3 font-medium text-slate-700">{r.flat}</td>
+                                   <td className="px-6 py-3 text-slate-900">{r.name}</td>
+                                   <td className="px-6 py-3 text-slate-500 font-mono text-xs">{r.phone}</td>
+                                   <td className="px-6 py-3">
+                                       <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-mono font-medium">
+                                           {r.username}
+                                       </span>
+                                   </td>
                                </tr>
                            ))}
                        </tbody>
@@ -1070,24 +1081,33 @@ function BulkResidentForm({ onCancel, onSuccess }) {
            </div>
            
            {(result.skippedDetails?.length > 0 || result.failedDetails?.length > 0) && (
-               <div className="space-y-2">
-                   <div className="text-xs font-medium text-slate-500 uppercase tracking-wider">Issues Found</div>
-                   <div className="max-h-32 overflow-y-auto border rounded bg-slate-50 p-2 text-xs font-mono space-y-1">
+               <div className="space-y-3 pt-2">
+                   <div className="text-xs font-bold text-slate-500 uppercase tracking-wider px-1">Issues Found</div>
+                   <div className="max-h-40 overflow-y-auto border rounded-xl bg-slate-50 p-4 text-xs font-mono space-y-2 shadow-inner">
                        {result.failedDetails?.map((f, i) => (
-                           <div key={`fail-${i}`} className="text-red-600">
-                               [FAIL] {f.line} - {f.reason}
+                           <div key={`fail-${i}`} className="flex items-start gap-2 text-red-600 bg-red-50 p-2 rounded border border-red-100">
+                               <span className="font-bold shrink-0">[FAIL]</span>
+                               <span>{f.line} - {f.reason}</span>
                            </div>
                        ))}
                        {result.skippedDetails?.map((s, i) => (
-                           <div key={`skip-${i}`} className="text-amber-600">
-                               [SKIP] {s.line} - {s.reason}
+                           <div key={`skip-${i}`} className="flex items-start gap-2 text-amber-700 bg-amber-50 p-2 rounded border border-amber-100">
+                               <span className="font-bold shrink-0">[SKIP]</span>
+                               <span>{s.line} - {s.reason}</span>
                            </div>
                        ))}
                    </div>
                </div>
            )}
 
-           <Button onClick={onCancel} className="w-full">Close & Return</Button>
+           <div className="pt-4 pb-2">
+               <Button 
+                   onClick={onCancel} 
+                   className="w-full h-12 text-lg font-medium shadow-lg bg-slate-900 hover:bg-slate-800 transition-all hover:scale-[1.01] active:scale-[0.99]"
+               >
+                   Close & Return
+               </Button>
+           </div>
         </div>
      )
   }

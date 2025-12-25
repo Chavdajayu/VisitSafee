@@ -10,6 +10,7 @@ import ownerResidenciesHandler from './api/ownerResidencies.js';
 import toggleServiceHandler from './api/toggleService.js';
 import createOwnerHandler from './api/createOwner.js';
 import residencyStatusHandler from './api/residencyStatus.js';
+import registerResidencyHandler from './api/registerResidency.js';
 
 // Global error handlers
 process.on('uncaughtException', (err) => {
