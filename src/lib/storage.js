@@ -167,6 +167,28 @@ class StorageService {
     }
   }
 
+  async saveUserToken(token) {
+    const user = await this.getCurrentUser();
+    if (!user || !user.residencyId || !user.username) return;
+
+    // We only save tokens for logged-in users
+    try {
+        const collectionName = user.role === 'guard' ? 'guards' : 'residents';
+        
+        if (user.role === 'admin') {
+            // Admin token save (optional, if we want admin notifications later)
+            const residencyRef = doc(db, "residencies", user.residencyId);
+            await updateDoc(residencyRef, { fcmToken: token });
+        } else {
+            const userRef = doc(db, "residencies", user.residencyId, collectionName, user.username);
+            await updateDoc(userRef, { fcmToken: token });
+        }
+        console.log('FCM Token saved to Firestore');
+    } catch (error) {
+        console.error("Error saving FCM token:", error);
+    }
+  }
+
   async logout() {
     // Only clear session on explicit logout
     localStorage.removeItem("society_user_session");

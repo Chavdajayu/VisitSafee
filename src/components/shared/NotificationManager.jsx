@@ -80,6 +80,26 @@ export function NotificationManager() {
     if (messaging) {
       const unsubscribe = onMessage(messaging, async (payload) => {
         try {
+          // Show system notification even when app is open
+          if ('serviceWorker' in navigator) {
+            const registration = await navigator.serviceWorker.ready;
+            const { title, body, icon } = payload.notification || {};
+            const { visitorName, requestId, actionUrlApprove, actionUrlReject } = payload.data || {};
+            
+            registration.showNotification(title || "New Visitor Request", {
+              body: body || `${visitorName} wants to visit`,
+              icon: icon || "/icons/visitor.png",
+              badge: "/icons/badge.png",
+              tag: requestId ? `req-${requestId}` : undefined,
+              data: payload.data,
+              requireInteraction: true,
+              actions: [
+                  { action: "APPROVE", title: "Approve" },
+                  { action: "REJECT", title: "Reject" }
+              ]
+            });
+          }
+
           const rid = payload.data?.requestId;
           if (rid && !seen.has(rid)) {
             setSeen(prev => {

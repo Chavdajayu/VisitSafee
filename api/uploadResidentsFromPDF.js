@@ -93,8 +93,7 @@ export default async function handler(req, res) {
     let pdfText = "";
     try {
       const buffer = fs.readFileSync(file.filepath);
-      const parser = new PDFParse({ data: buffer });
-      const parsed = await parser.getText();
+      const parsed = await pdfParse(buffer);
       pdfText = parsed.text || "";
     } catch (pdfError) {
       res.status(200).json({ 
