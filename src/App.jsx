@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useState, useEffect } from "react";
 import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "@/lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -17,6 +17,9 @@ const ResidentDashboard = lazy(() => import("@/pages/ResidentDashboard"));
 const GuardDashboard = lazy(() => import("@/pages/GuardDashboard"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
 const AdminManagement = lazy(() => import("@/pages/AdminManagement"));
+const OwnerLogin = lazy(() => import("@/pages/OwnerLogin"));
+const OwnerDashboard = lazy(() => import("@/pages/OwnerDashboard"));
+const Maintenance = lazy(() => import("@/pages/Maintenance"));
 
 function LoadingSpinner() {
   return (
@@ -24,6 +27,25 @@ function LoadingSpinner() {
       <Loader2 className="h-8 w-8 animate-spin text-primary" />
     </div>
   );
+}
+
+function WithMaintenanceCheck({ societyName, children }) {
+  const [status, setStatus] = useState(null);
+
+  useEffect(() => {
+    fetch(`/api/residencyStatus?societyName=${encodeURIComponent(societyName)}`)
+      .then(res => res.json())
+      .then(data => setStatus(data.serviceStatus))
+      .catch((e) => {
+        console.error("Failed to fetch residency status", e);
+        setStatus("ON");
+      });
+  }, [societyName]);
+
+  if (status === null) return <LoadingSpinner />;
+  if (status === "OFF") return <Maintenance residencyName={societyName} />;
+  
+  return children;
 }
 
 function ProtectedRoute({ 
@@ -112,33 +134,67 @@ function Router() {
           return <Redirect to="/login" />;
         }} />
         <Route path="/login" component={Login} />
-      <Route path="/register-residency" component={RegisterResidency} />
+        <Route path="/register-residency" component={RegisterResidency} />
+        
+        {/* Owner Routes */}
+        <Route path="/owner-login" component={OwnerLogin} />
+        <Route path="/Owner/:ownerName">
+            {(params) => <OwnerDashboard ownerName={params.ownerName} />}
+        </Route>
       
       <Route path="/:societyName/visitor-form">
-        {(params) => <VisitorForm residencyName={params.societyName} />}
+        {(params) => (
+            <WithMaintenanceCheck societyName={params.societyName}>
+                <VisitorForm residencyName={params.societyName} />
+            </WithMaintenanceCheck>
+        )}
       </Route>
       <Route path="/visitor-form/:residencyName">
-        {(params) => <VisitorForm residencyName={params.residencyName} />}
+        {(params) => (
+            <WithMaintenanceCheck societyName={params.residencyName}>
+                <VisitorForm residencyName={params.residencyName} />
+            </WithMaintenanceCheck>
+        )}
       </Route>
       
       <Route path="/visitor-success" component={VisitorStatus} />
 
       <Route path="/:societyName/resident/:flatNumber">
-        {(params) => <ProtectedRoute component={ResidentDashboard} role="resident" params={params} />}
+        {(params) => (
+            <WithMaintenanceCheck societyName={params.societyName}>
+                <ProtectedRoute component={ResidentDashboard} role="resident" params={params} />
+            </WithMaintenanceCheck>
+        )}
       </Route>
       
       <Route path="/:societyName/resident">
-        {(params) => <ProtectedRoute component={ResidentDashboard} role="resident" params={params} />}
+        {(params) => (
+            <WithMaintenanceCheck societyName={params.societyName}>
+                <ProtectedRoute component={ResidentDashboard} role="resident" params={params} />
+            </WithMaintenanceCheck>
+        )}
       </Route>
 
       <Route path="/:societyName/guard">
-        {(params) => <ProtectedRoute component={GuardDashboard} role="guard" params={params} />}
+        {(params) => (
+            <WithMaintenanceCheck societyName={params.societyName}>
+                <ProtectedRoute component={GuardDashboard} role="guard" params={params} />
+            </WithMaintenanceCheck>
+        )}
       </Route>
       <Route path="/:societyName/admin">
-        {(params) => <ProtectedRoute component={AdminDashboard} role="admin" params={params} />}
+        {(params) => (
+            <WithMaintenanceCheck societyName={params.societyName}>
+                <ProtectedRoute component={AdminDashboard} role="admin" params={params} />
+            </WithMaintenanceCheck>
+        )}
       </Route>
       <Route path="/:societyName/admin/management">
-        {(params) => <ProtectedRoute component={AdminManagement} role="admin" params={params} />}
+        {(params) => (
+            <WithMaintenanceCheck societyName={params.societyName}>
+                <ProtectedRoute component={AdminManagement} role="admin" params={params} />
+            </WithMaintenanceCheck>
+        )}
       </Route>
 
       <Route path="/resident" component={() => <LegacyRoute role="resident" />} />

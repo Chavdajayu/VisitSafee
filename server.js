@@ -5,6 +5,11 @@ import importResidentsHandler from './api/importResidents.js';
 import sendPushHandler from './api/send-push.js';
 import updateRequestHandler from './api/update-request-status.js';
 import visitorActionHandler from './api/visitor-action.js';
+import ownerLoginHandler from './api/ownerLogin.js';
+import ownerResidenciesHandler from './api/ownerResidencies.js';
+import toggleServiceHandler from './api/toggleService.js';
+import createOwnerHandler from './api/createOwner.js';
+import residencyStatusHandler from './api/residencyStatus.js';
 
 // Global error handlers
 process.on('uncaughtException', (err) => {
@@ -38,6 +43,13 @@ app.post('/api/send-push', adaptHandler(sendPushHandler));
 app.post('/api/update-request-status', adaptHandler(updateRequestHandler));
 // visitor-action usually handles GET or POST, let's support both if unclear
 app.all('/api/visitor-action', adaptHandler(visitorActionHandler));
+
+// Owner API
+app.post('/api/ownerLogin', adaptHandler(ownerLoginHandler));
+app.get('/api/ownerResidencies', adaptHandler(ownerResidenciesHandler));
+app.post('/api/toggleService', adaptHandler(toggleServiceHandler));
+app.post('/api/createOwner', adaptHandler(createOwnerHandler));
+app.get('/api/residencyStatus', adaptHandler(residencyStatusHandler));
 
 const PORT = 3000;
 app.listen(PORT, () => {
