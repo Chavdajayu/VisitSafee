@@ -1,14 +1,14 @@
 
-import createOwner from './_lib/createOwner.js';
-import deleteResidency from './_lib/deleteResidency.js';
-import importResidents from './_lib/importResidents.js';
-import ownerLogin from './_lib/ownerLogin.js';
-import ownerResidencies from './_lib/ownerResidencies.js';
-import registerResidency from './_lib/registerResidency.js';
-import residencyStatus from './_lib/residencyStatus.js';
-import toggleService from './_lib/toggleService.js';
-import updateRequestStatus from './_lib/update-request-status.js';
-import uploadResidentsFromPDF from './_lib/uploadResidentsFromPDF.js';
+import createOwner from '../server-lib/createOwner.js';
+import deleteResidency from '../server-lib/deleteResidency.js';
+import importResidents from '../server-lib/importResidents.js';
+import ownerLogin from '../server-lib/ownerLogin.js';
+import ownerResidencies from '../server-lib/ownerResidencies.js';
+import registerResidency from '../server-lib/registerResidency.js';
+import residencyStatus from '../server-lib/residencyStatus.js';
+import toggleService from '../server-lib/toggleService.js';
+import updateRequestStatus from '../server-lib/update-request-status.js';
+import uploadResidentsFromPDF from '../server-lib/uploadResidentsFromPDF.js';
 
 const handlers = {
   createOwner,
