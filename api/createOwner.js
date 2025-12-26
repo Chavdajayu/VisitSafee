@@ -1,5 +1,5 @@
-import { initAdmin } from "./firebaseAdmin.js";
-import admin from "firebase-admin";
+import { db } from "./firebaseClient.js";
+import { doc, setDoc, collection, getDocs } from "firebase/firestore";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -17,17 +17,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    initAdmin();
-    const db = admin.firestore();
-    
-    // Step 1: Create new owner document
-    const ownerRef = db.collection("owners").doc(username);
-    
-    // Step 2: Fetch all residencies and add them to the new owner's residencies list
-    const residenciesSnapshot = await db.collection('residencies').get();
+    // Step 1: Fetch all residencies and add them to the new owner's residencies list
+    const residenciesRef = collection(db, "residencies");
+    const residenciesSnapshot = await getDocs(residenciesRef);
     const residenciesList = residenciesSnapshot.docs.map(doc => doc.data().name); // Extract the name of each residency
 
-    await ownerRef.set({
+    // Step 2: Create new owner document
+    const ownerRef = doc(db, "owners", username);
+
+    await setDoc(ownerRef, {
         username,
         password, // Storing plain text as per prompt requirement
         name: name || username,
