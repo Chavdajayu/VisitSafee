@@ -9,6 +9,7 @@ import toggleServiceHandler from './api/toggleService.js';
 import createOwnerHandler from './api/createOwner.js';
 import residencyStatusHandler from './api/residencyStatus.js';
 import registerResidencyHandler from './api/registerResidency.js';
+import deleteResidencyHandler from './api/deleteResidency.js';
 
 // Global error handlers
 process.on('uncaughtException', (err) => {
@@ -47,6 +48,7 @@ app.post('/api/toggleService', adaptHandler(toggleServiceHandler));
 app.post('/api/createOwner', adaptHandler(createOwnerHandler));
 app.get('/api/residencyStatus', adaptHandler(residencyStatusHandler));
 app.post('/api/registerResidency', adaptHandler(registerResidencyHandler));
+app.post('/api/deleteResidency', adaptHandler(deleteResidencyHandler));
 
 const PORT = 3000;
 app.listen(PORT, () => {

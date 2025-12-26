@@ -6,9 +6,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Loader2, LogOut, Plus, Building2 } from "lucide-react";
+import { Loader2, LogOut, Plus, Building2, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export default function OwnerDashboard() {
@@ -70,6 +81,26 @@ export default function OwnerDashboard() {
       toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
       // Revert (refetch will handle it, but immediate revert is better)
       queryClient.invalidateQueries(["ownerResidencies", owner?.username]);
+    }
+  };
+
+  const handleDelete = async (residencyId) => {
+    try {
+      const res = await fetch("/api/deleteResidency", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ residencyId }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to delete");
+      }
+
+      toast({ title: "Success", description: "Residency deleted successfully" });
+      queryClient.invalidateQueries(["ownerResidencies", owner?.username]);
+    } catch (error) {
+      console.error("Delete error:", error);
+      toast({ title: "Error", description: "Failed to delete residency", variant: "destructive" });
     }
   };
 
@@ -178,10 +209,33 @@ export default function OwnerDashboard() {
                             : "Service is disabled. Users will see maintenance page."}
                       </p>
                     </div>
-                    <Switch
-                      checked={residency.serviceStatus === "ON"}
-                      onCheckedChange={() => handleToggle(residency.id, residency.serviceStatus || "ON")}
-                    />
+                    <div className="flex items-center gap-4">
+                        <Switch
+                          checked={residency.serviceStatus === "ON"}
+                          onCheckedChange={() => handleToggle(residency.id, residency.serviceStatus || "ON")}
+                        />
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="destructive" size="icon">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This action cannot be undone. This will permanently delete the residency "{residency.name}" from the database.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleDelete(residency.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
