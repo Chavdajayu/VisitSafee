@@ -49,9 +49,22 @@ export default async function handler(req, res) {
     const ownerRef = db.collection("owners").doc(ownerId);
     
     // Use arrayUnion to add the new residency name to the list
-    await ownerRef.update({
-      residencies: admin.firestore.FieldValue.arrayUnion(residencyName)
-    });
+    try {
+        await ownerRef.update({
+          residencies: admin.firestore.FieldValue.arrayUnion(residencyName)
+        });
+    } catch (ownerError) {
+        // If owner doc doesn't exist, create it
+        if (ownerError.code === 5 || ownerError.message.includes('NOT_FOUND')) {
+             await ownerRef.set({
+                residencies: [residencyName],
+                username: ownerId,
+                createdAt: new Date().toISOString()
+             });
+        } else {
+            throw ownerError;
+        }
+    }
 
     return res.status(200).json({ 
         success: true, 
