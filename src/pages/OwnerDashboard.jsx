@@ -9,13 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Loader2, LogOut, Plus, Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export default function OwnerDashboard() {
-  const [residencies, setResidencies] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [owner, setOwner] = useState(null);
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // Add Owner State
   const [newOwnerOpen, setNewOwnerOpen] = useState(false);
@@ -30,36 +30,28 @@ export default function OwnerDashboard() {
     }
     const ownerData = JSON.parse(session);
     setOwner(ownerData);
-
-    fetchResidencies(ownerData.username);
   }, [navigate]);
 
-  const fetchResidencies = async (username) => {
-    try {
-      const res = await fetch(`/api/ownerResidencies?username=${username}`);
-      if (res.ok) {
-        const text = await res.text();
-        try {
-          const data = JSON.parse(text);
-          setResidencies(data.residencies || []);
-        } catch (e) {
-           console.error("Invalid JSON from ownerResidencies:", text);
-        }
-      }
-    } catch (error) {
-      console.error("Error fetching residencies:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: residencies = [], isLoading: loading } = useQuery({
+    queryKey: ["ownerResidencies", owner?.username],
+    queryFn: async () => {
+      if (!owner?.username) return [];
+      const res = await fetch(`/api/ownerResidencies?username=${owner.username}`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      const data = await res.json();
+      return data.residencies || [];
+    },
+    enabled: !!owner?.username,
+    refetchInterval: 3000, // Poll every 3 seconds for real-time updates
+  });
 
   const handleToggle = async (residencyId, currentStatus) => {
     const newStatus = currentStatus === "ON" ? "OFF" : "ON";
     
     // Optimistic update
-    setResidencies(prev => prev.map(r => 
-        r.id === residencyId ? { ...r, serviceStatus: newStatus } : r
-    ));
+    queryClient.setQueryData(["ownerResidencies", owner?.username], (oldData) => {
+       return oldData.map(r => r.id === residencyId ? { ...r, serviceStatus: newStatus } : r);
+    });
 
     try {
       const res = await fetch("/api/toggleService", {
@@ -76,10 +68,8 @@ export default function OwnerDashboard() {
     } catch (error) {
       console.error("Toggle error:", error);
       toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
-      // Revert
-      setResidencies(prev => prev.map(r => 
-        r.id === residencyId ? { ...r, serviceStatus: currentStatus } : r
-      ));
+      // Revert (refetch will handle it, but immediate revert is better)
+      queryClient.invalidateQueries(["ownerResidencies", owner?.username]);
     }
   };
 
@@ -113,7 +103,7 @@ export default function OwnerDashboard() {
     }
   };
 
-  if (loading) return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin" /></div>;
+  if (loading && !residencies.length) return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin" /></div>;
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">

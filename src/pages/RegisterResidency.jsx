@@ -2,7 +2,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion } from "framer-motion";
 import { Link, useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Building2, ArrowLeft } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { registerResidencySchema } from "@/lib/types";
 export default function RegisterResidency() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
 
   const form = useForm({
     resolver: zodResolver(registerResidencySchema),
@@ -32,6 +33,7 @@ export default function RegisterResidency() {
       return await storage.registerResidency(data);
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["residencies"] });
       toast({
         title: "Residency Registered",
         description: "Your society has been created successfully. Please login.",
