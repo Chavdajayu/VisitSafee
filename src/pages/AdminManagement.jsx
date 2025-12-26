@@ -928,13 +928,17 @@ function BulkResidentForm({ onCancel, onSuccess }) {
            body: formData,
         });
 
-        // Validate response content-type
-        const contentType = response.headers.get("content-type") || "";
-        if (!contentType.includes("application/json")) {
-           throw new Error("Server returned invalid response (not JSON)");
-        }
+        // 1. Read as text first (safest)
+        const textResponse = await response.text();
         
-        const res = await response.json();
+        // 2. Try parsing as JSON
+        let res;
+        try {
+            res = JSON.parse(textResponse);
+        } catch (jsonError) {
+            console.error("JSON Parse Error. Raw response:", textResponse);
+            throw new Error(`Server returned invalid JSON: ${textResponse.substring(0, 100)}...`);
+        }
         
         if (!res.success) {
            throw new Error(res.message || "Upload failed");

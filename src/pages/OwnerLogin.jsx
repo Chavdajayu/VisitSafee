@@ -24,7 +24,14 @@ export default function OwnerLogin() {
         body: JSON.stringify({ username, password }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+         console.error("Invalid JSON from ownerLogin:", text);
+         throw new Error("Server error: Invalid response format");
+      }
 
       if (res.ok) {
         // Save session

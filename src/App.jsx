@@ -5,7 +5,6 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth, AuthProvider } from "@/hooks/use-auth.jsx";
-import { NotificationManager } from "@/components/shared/NotificationManager";
 import { Loader2 } from "lucide-react";
 
 const NotFound = lazy(() => import("@/pages/not-found"));
@@ -213,7 +212,6 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <TooltipProvider>
-          <NotificationManager />
           <Toaster />
           <Router />
         </TooltipProvider>

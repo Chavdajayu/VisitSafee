@@ -38,8 +38,13 @@ export default function OwnerDashboard() {
     try {
       const res = await fetch(`/api/ownerResidencies?username=${username}`);
       if (res.ok) {
-        const data = await res.json();
-        setResidencies(data.residencies || []);
+        const text = await res.text();
+        try {
+          const data = JSON.parse(text);
+          setResidencies(data.residencies || []);
+        } catch (e) {
+           console.error("Invalid JSON from ownerResidencies:", text);
+        }
       }
     } catch (error) {
       console.error("Error fetching residencies:", error);

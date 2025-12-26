@@ -2,7 +2,7 @@ import { useAuth } from "@/hooks/use-auth.jsx";
 import { Link } from "wouter";
 import { LogOut, ShieldCheck, Home, User, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { NotificationManager } from "@/components/shared/NotificationManager";
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +23,6 @@ export function Layout({ children }) {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      <NotificationManager />
       <header className="sticky top-0 z-50 w-full border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">

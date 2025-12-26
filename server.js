@@ -2,9 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import importResidentsHandler from './api/importResidents.js';
-import sendPushHandler from './api/send-push.js';
 import updateRequestHandler from './api/update-request-status.js';
-import visitorActionHandler from './api/visitor-action.js';
 import ownerLoginHandler from './api/ownerLogin.js';
 import ownerResidenciesHandler from './api/ownerResidencies.js';
 import toggleServiceHandler from './api/toggleService.js';
@@ -40,10 +38,7 @@ const adaptHandler = (handler) => async (req, res) => {
 };
 
 app.post('/api/importResidents', adaptHandler(importResidentsHandler));
-app.post('/api/send-push', adaptHandler(sendPushHandler));
 app.post('/api/update-request-status', adaptHandler(updateRequestHandler));
-// visitor-action usually handles GET or POST, let's support both if unclear
-app.all('/api/visitor-action', adaptHandler(visitorActionHandler));
 
 // Owner API
 app.post('/api/ownerLogin', adaptHandler(ownerLoginHandler));

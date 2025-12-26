@@ -33,11 +33,25 @@ class StorageService {
     });
 
     if (!response.ok) {
-        const errorData = await response.json();
+        const text = await response.text();
+        let errorData;
+        try {
+            errorData = JSON.parse(text);
+        } catch {
+            console.error("Register Residency Error (Raw):", text);
+            throw new Error("Failed to register residency (Server Error)");
+        }
         throw new Error(errorData.message || "Failed to register residency");
     }
 
-    const result = await response.json();
+    const text = await response.text();
+    let result;
+    try {
+        result = JSON.parse(text);
+    } catch (e) {
+        console.error("Register Residency Success Parse Error:", text);
+        throw new Error("Invalid server response");
+    }
     return result.data;
   }
 
@@ -163,28 +177,6 @@ class StorageService {
           console.log("Storage may be cleared by the UA under storage pressure.");
         }
       }).catch(err => console.error("Persistence check failed", err));
-    }
-  }
-
-  async saveUserToken(token) {
-    const user = await this.getCurrentUser();
-    if (!user || !user.residencyId || !user.username) return;
-
-    // We only save tokens for logged-in users
-    try {
-        const collectionName = user.role === 'guard' ? 'guards' : 'residents';
-        
-        if (user.role === 'admin') {
-            // Admin token save (optional, if we want admin notifications later)
-            const residencyRef = doc(db, "residencies", user.residencyId);
-            await updateDoc(residencyRef, { adminFcmToken: token });
-        } else {
-            const userRef = doc(db, "residencies", user.residencyId, collectionName, user.username);
-            await updateDoc(userRef, { fcmToken: token });
-        }
-        console.log('FCM Token saved to Firestore');
-    } catch (error) {
-        console.error("Error saving FCM token:", error);
     }
   }
 
@@ -387,40 +379,6 @@ class StorageService {
 
     const docRef = await addDoc(collection(db, "residencies", residencyId, "visitor_requests"), docData);
     
-    // Trigger Push Notification
-    try {
-      if (data.flatId) {
-        // Use provided residencyName or fallback to fetching (but here we try to be fast)
-        // If residencyName is missing, deep link might default to root or need handling
-        const societyPath = residencyName ? encodeURIComponent(residencyName) : 'society';
-        
-        fetch('/api/send-push', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            residencyId,
-            flatId: data.flatId,
-            title: 'New Visitor Request',
-            body: `${data.visitorName} wants to visit for ${data.purpose || 'a visit'}.`,
-            data: {
-              url: `/${societyPath}/resident`,
-              requestId: docRef.id,
-              residencyId: residencyId,
-              username: 'system',
-              visitorName: data.visitorName,
-              phone: data.visitorPhone,
-              flatId: data.flatId,
-              vehicle: data.vehicleNumber || '',
-              purpose: data.purpose || '',
-              status: 'pending'
-            }
-          })
-        }).catch(err => console.warn("Background push trigger failed:", err));
-      }
-    } catch (e) {
-      console.warn("Error triggering push notification:", e);
-    }
-
     return docRef.id;
   }
 
