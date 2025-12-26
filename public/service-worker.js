@@ -8,6 +8,45 @@ const STATIC_ASSETS = [
   '/icons/icon-512.png'
 ];
 
+// Import Firebase Scripts (Compat versions)
+importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
+
+// Initialize Firebase using URL params
+// We read the config from the registration URL (location.search)
+const params = new URLSearchParams(self.location.search);
+const firebaseConfig = {
+  apiKey: params.get('apiKey'),
+  authDomain: params.get('authDomain'),
+  projectId: params.get('projectId'),
+  storageBucket: params.get('storageBucket'),
+  messagingSenderId: params.get('messagingSenderId'),
+  appId: params.get('appId'),
+};
+
+// Initialize Firebase Messaging if config is present
+if (firebaseConfig.apiKey) {
+    firebase.initializeApp(firebaseConfig);
+    const messaging = firebase.messaging();
+
+    // Background Message Handler (Step 4)
+    messaging.onBackgroundMessage((payload) => {
+      console.log('[firebase-messaging-sw.js] Received background message ', payload);
+      
+      const { title, body, icon } = payload.notification || {};
+      const notificationTitle = title;
+      const notificationOptions = {
+        body: body,
+        icon: icon || '/icons/icon-192.png',
+        tag: payload.messageId // Step 6: De-duplication
+      };
+
+      self.registration.showNotification(notificationTitle, notificationOptions);
+    });
+}
+
+// === PWA LOGIC ===
+
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
