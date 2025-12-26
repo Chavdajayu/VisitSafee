@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useState, useEffect } from "react";
 import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "@/lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth, AuthProvider } from "@/hooks/use-auth.jsx";
@@ -29,19 +29,23 @@ function LoadingSpinner() {
 }
 
 function WithMaintenanceCheck({ societyName, children }) {
-  const [status, setStatus] = useState(null);
-
-  useEffect(() => {
-    fetch(`/api/residencyStatus?societyName=${encodeURIComponent(societyName)}`)
-      .then(res => res.json())
-      .then(data => setStatus(data.serviceStatus))
-      .catch((e) => {
+  const { data: status, isLoading } = useQuery({
+    queryKey: ["residencyStatus", societyName],
+    queryFn: async () => {
+      try {
+        const res = await fetch(`/api/residencyStatus?societyName=${encodeURIComponent(societyName)}`);
+        if (!res.ok) throw new Error("Failed");
+        const data = await res.json();
+        return data.serviceStatus;
+      } catch (e) {
         console.error("Failed to fetch residency status", e);
-        setStatus("ON");
-      });
-  }, [societyName]);
+        return "ON";
+      }
+    },
+    refetchInterval: 3000, // Poll every 3 seconds for real-time updates
+  });
 
-  if (status === null) return <LoadingSpinner />;
+  if (isLoading) return <LoadingSpinner />;
   if (status === "OFF") return <Maintenance residencyName={societyName} />;
   
   return children;
