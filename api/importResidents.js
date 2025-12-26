@@ -1,4 +1,5 @@
-import admin from "firebase-admin";
+import { db } from "./firebaseClient.js";
+import { doc, collection, getDocs, writeBatch, serverTimestamp } from "firebase/firestore";
 import formidable from "formidable";
 import fs from "fs";
 import pdfParse from "pdf-parse";
@@ -15,22 +16,7 @@ function normalizeBlock(value) {
 
 // Initialize Firebase Admin (Singleton)
 function initAdmin() {
-  if (admin.apps.length) return;
-  
-  const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
-  
-  try {
-      if (serviceAccountVar) {
-          const serviceAccount = JSON.parse(serviceAccountVar);
-          admin.initializeApp({
-              credential: admin.credential.cert(serviceAccount)
-          });
-      } else {
-          admin.initializeApp();
-      }
-  } catch (e) {
-      console.error("Firebase Admin Init Error:", e);
-  }
+  // Client SDK doesn't need admin initialization
 }
 
 export const config = {
@@ -59,9 +45,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    initAdmin();
-    const db = admin.firestore();
-
     // 1. Parse Form Data
     const data = await new Promise((resolve, reject) => {
       const form = formidable({ multiples: false, maxFileSize: 10 * 1024 * 1024 }); // 10MB
@@ -111,10 +94,10 @@ export default async function handler(req, res) {
     let skippedCount = 0;
     let failedCount = 0;
 
-    const residentsRef = db.collection("residencies").doc(residencyId).collection("residents");
+    const residentsRef = collection(db, "residencies", residencyId, "residents");
 
     // Pre-fetch existing residents to minimize reads/writes
-    const existingSnapshot = await residentsRef.get();
+    const existingSnapshot = await getDocs(residentsRef);
     const existingUsernames = new Set();
     
     existingSnapshot.forEach(doc => {
@@ -295,12 +278,12 @@ export default async function handler(req, res) {
             username: String(username).trim(),
             password: String(password).trim(),
             role: "resident",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            createdAt: serverTimestamp()
         };
 
         operations.push({
             type: 'SET',
-            ref: residentsRef.doc(username),
+            ref: doc(db, "residencies", residencyId, "residents", username),
             data: residentData
         });
 
@@ -321,7 +304,7 @@ export default async function handler(req, res) {
     // 4. Execute Batch Writes
     const batchSize = 400; // Safe limit
     for (let i = 0; i < operations.length; i += batchSize) {
-        const batch = db.batch();
+        const batch = writeBatch(db);
         const chunk = operations.slice(i, i + batchSize);
         
         chunk.forEach(op => {
