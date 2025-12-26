@@ -88,9 +88,21 @@ export async function sendPushNotification(residencyId, userId, role, notificati
                           userData.fcmTokens ? 'fcmTokens' : 
                           userData.adminFcmToken ? 'adminFcmToken' : 'adminFcmTokens';
         
-        await userRef.update({
-          [fieldName]: admin.firestore.FieldValue.arrayRemove(...failedTokens)
-        });
+        if (fieldName === 'fcmToken' || fieldName === 'adminFcmToken') {
+            // Single token field - if it failed, delete the field
+            // Note: We only delete if the failed token matches the current one
+            // (Since failedTokens could be a list, but for single field, it's just one)
+            if (failedTokens.includes(userData[fieldName])) {
+                await userRef.update({
+                    [fieldName]: admin.firestore.FieldValue.delete()
+                });
+            }
+        } else {
+            // Array field
+            await userRef.update({
+                [fieldName]: admin.firestore.FieldValue.arrayRemove(...failedTokens)
+            });
+        }
       }
     }
 

@@ -16,7 +16,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
       appId: import.meta.env.VITE_FIREBASE_APP_ID,
     }).toString();
 
-    navigator.serviceWorker.register(`/service-worker.js?${firebaseConfig}`)
+    navigator.serviceWorker.register(`/firebase-messaging-sw.js?${firebaseConfig}`)
       .then((registration) => {
          console.log('SW registered:', registration);
          // Initialize messaging after SW registration
