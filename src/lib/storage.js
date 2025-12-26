@@ -393,12 +393,23 @@ class StorageService {
     const user = await this.getCurrentUser();
     if (!user) throw new Error("Not authenticated");
 
-    const docRef = doc(db, "residencies", user.residencyId, "visitor_requests", id);
-    await updateDoc(docRef, { 
-      status,
-      updatedAt: serverTimestamp(),
-      actionBy: user.username
+    const response = await fetch('/api/update-request-status', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            residencyId: user.residencyId,
+            requestId: id,
+            status: status,
+            username: user.username
+        }),
     });
+
+    if (!response.ok) {
+        throw new Error("Failed to update status");
+    }
+
     return id;
   }
 
