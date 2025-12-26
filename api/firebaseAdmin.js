@@ -3,7 +3,7 @@ import admin from "firebase-admin";
 export function initAdmin() {
   if (admin.apps.length) return;
   
-  const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+  const serviceAccountVar = process.env.FIREBASE_ADMIN_CREDENTIALS || process.env.FIREBASE_SERVICE_ACCOUNT;
   
   try {
       if (serviceAccountVar) {

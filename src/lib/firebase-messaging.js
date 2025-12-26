@@ -81,13 +81,13 @@ const saveTokenToFirestore = async (token) => {
 
     if (role === "admin") {
        userRef = doc(db, "residencies", residencyId);
-       updateData = { adminFcmTokens: arrayUnion(token) };
+       updateData = { adminFcmToken: arrayUnion(token) };
     } else if (role === "resident") {
        userRef = doc(db, "residencies", residencyId, "residents", username);
-       updateData = { fcmTokens: arrayUnion(token) };
+       updateData = { fcmToken: arrayUnion(token) };
     } else if (role === "guard") {
        userRef = doc(db, "residencies", residencyId, "guards", username);
-       updateData = { fcmTokens: arrayUnion(token) };
+       updateData = { fcmToken: arrayUnion(token) };
     }
 
     if (userRef) {
