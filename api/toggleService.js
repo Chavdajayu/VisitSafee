@@ -1,5 +1,5 @@
-import { initAdmin } from "./firebaseAdmin.js";
-import admin from "firebase-admin";
+import { db } from "./firebaseClient.js";
+import { doc, updateDoc } from "firebase/firestore";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -17,11 +17,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    initAdmin();
-    const db = admin.firestore();
-    
-    const residencyRef = db.collection("residencies").doc(residencyId);
-    await residencyRef.update({ serviceStatus: status });
+    const residencyRef = doc(db, "residencies", residencyId);
+    await updateDoc(residencyRef, { serviceStatus: status });
 
     res.status(200).json({ success: true });
   } catch (error) {
