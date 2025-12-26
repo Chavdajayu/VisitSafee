@@ -22,19 +22,15 @@ export default async function handler(req, res) {
     }
 
     const ownerData = ownerDoc.data();
-    const assignedResidencyNames = ownerData.residencies || [];
+    // We ignore the assignedResidencyNames list to show ALL residencies as per user request
+    // const assignedResidencyNames = ownerData.residencies || [];
 
-    if (assignedResidencyNames.length === 0) {
-        return res.status(200).json({ residencies: [] });
-    }
-
-    // Fetch all residencies and filter
+    // Fetch all residencies
     const residenciesRef = collection(db, "residencies");
     const allResidenciesSnapshot = await getDocs(residenciesRef);
     
     const residencies = allResidenciesSnapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(residency => assignedResidencyNames.includes(residency.name));
+        .map(doc => ({ id: doc.id, ...doc.data() }));
 
     res.status(200).json({ residencies });
 
