@@ -1,5 +1,6 @@
 
 import createOwner from '../server-lib/createOwner.js';
+import broadcastNotification from '../server-lib/broadcastNotification.js';
 import deleteResidency from '../server-lib/deleteResidency.js';
 import importResidents from '../server-lib/importResidents.js';
 import ownerLogin from '../server-lib/ownerLogin.js';
@@ -12,6 +13,7 @@ import uploadResidentsFromPDF from '../server-lib/uploadResidentsFromPDF.js';
 
 const handlers = {
   createOwner,
+  'broadcast-notification': broadcastNotification,
   deleteResidency,
   importResidents,
   ownerLogin,

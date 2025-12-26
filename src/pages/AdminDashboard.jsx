@@ -4,19 +4,68 @@ import { useAdminVisitorLogs } from "@/hooks/use-admin-visitor-logs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Users, UserPlus, UserCheck, Clock, CheckCircle, XCircle, LogIn, LogOut, Settings } from "lucide-react";
+import { Users, UserPlus, UserCheck, Clock, CheckCircle, XCircle, LogIn, LogOut, Settings, Bell } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth.jsx";
-import { useEffect, memo } from "react";
+import { useEffect, memo, useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+
 
 export default function AdminDashboard() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
   const { data: stats, isLoading: statsLoading } = useStats();
   const { data: logs, isLoading: logsLoading } = useAdminVisitorLogs();
+  const { toast } = useToast();
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [broadcastTitle, setBroadcastTitle] = useState("");
+  const [broadcastMessage, setBroadcastMessage] = useState("");
+  const [sendingBroadcast, setSendingBroadcast] = useState(false);
+
+  const handleBroadcast = async () => {
+    if (!broadcastTitle.trim() || !broadcastMessage.trim()) {
+      toast({ title: "Error", description: "Title and message are required", variant: "destructive" });
+      return;
+    }
+
+    setSendingBroadcast(true);
+    try {
+      const response = await fetch("/api/broadcast-notification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          residencyId: user.residencyId,
+          title: broadcastTitle,
+          body: broadcastMessage
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) throw new Error(result.error || "Failed to send broadcast");
+
+      if (result.sentCount === 0 && result.message) {
+         toast({ title: "Notice", description: result.message });
+      } else {
+         toast({ title: "Success", description: `Notification sent to ${result.sentCount} residents.` });
+      }
+      
+      setBroadcastOpen(false);
+      setBroadcastTitle("");
+      setBroadcastMessage("");
+    } catch (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setSendingBroadcast(false);
+    }
+  };
 
   useEffect(() => {
     if (user?.residencyName) {
@@ -77,17 +126,69 @@ export default function AdminDashboard() {
             <h1 className="text-3xl font-bold text-slate-900" data-testid="text-admin-title">{user?.residencyName} Admin Dashboard</h1>
             <p className="text-slate-500 mt-1">Real-time visitor entry management system overview for {user?.residencyName}</p>
           </div>
-          <Button 
-            onClick={() => {
-              const societyPath = user.residencyName ? `/${encodeURIComponent(user.residencyName)}` : "";
-              navigate(`${societyPath}/admin/management`);
-            }}
-            data-testid="button-management"
-            className="gap-2"
-          >
-            <Settings className="w-4 h-4" />
-            Management
-          </Button>
+          <div className="flex gap-2">
+            <Dialog open={broadcastOpen} onOpenChange={setBroadcastOpen}>
+              <DialogTrigger asChild>
+                <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700">
+                  <Bell className="w-4 h-4" />
+                  Send Notification
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Send Notification to All Residents</DialogTitle>
+                  <DialogDescription>
+                    This will send a push notification to all residents of {user?.residencyName}.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="title">Title</Label>
+                    <Input 
+                      id="title" 
+                      placeholder="e.g. Society Meeting" 
+                      value={broadcastTitle}
+                      onChange={(e) => setBroadcastTitle(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="message">Message</Label>
+                    <Textarea 
+                      id="message" 
+                      placeholder="e.g. Please gather at the clubhouse at 6 PM." 
+                      value={broadcastMessage}
+                      onChange={(e) => setBroadcastMessage(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setBroadcastOpen(false)}>Cancel</Button>
+                  <Button onClick={handleBroadcast} disabled={sendingBroadcast}>
+                    {sendingBroadcast ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      "Send Notification"
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            <Button 
+              onClick={() => {
+                const societyPath = user.residencyName ? `/${encodeURIComponent(user.residencyName)}` : "";
+                navigate(`${societyPath}/admin/management`);
+              }}
+              data-testid="button-management"
+              className="gap-2"
+            >
+              <Settings className="w-4 h-4" />
+              Management
+            </Button>
+          </div>
         </div>
 
         {/* Key Metrics */}
