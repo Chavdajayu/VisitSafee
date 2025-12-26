@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { storage } from "../lib/storage";
 import { useQueryClient } from "@tanstack/react-query";
+import { requestToken } from "../lib/firebase-messaging";
 
 const AuthContext = createContext(null);
 
@@ -33,6 +34,10 @@ export function AuthProvider({ children }) {
           setUser(currentUser);
           setRole(currentUser?.role ?? null);
           queryClient.setQueryData(["/api/user"], currentUser);
+          // Request permission/token on session restore
+          if (currentUser) {
+            requestToken().catch(console.error);
+          }
         }
       } catch (err) {
         if (mounted) setUser(null);
@@ -58,6 +63,9 @@ export function AuthProvider({ children }) {
       setUser(loggedInUser);
       setRole(loggedInUser?.role ?? null);
       queryClient.setQueryData(["/api/user"], loggedInUser);
+      
+      // Request permission/token on login
+      requestToken().catch(console.error);
 
       options.onSuccess?.(loggedInUser);
     } catch (error) {

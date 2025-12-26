@@ -1,6 +1,6 @@
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 import { app, db } from "./firebase";
-import { doc, updateDoc, arrayUnion } from "firebase/firestore";
+import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 
 let messaging = null;
 
@@ -15,17 +15,14 @@ export const initMessaging = async () => {
         const { title, body, icon } = payload.notification || {};
         
         // Show notification if permission granted
-        // This satisfies Step 5: "Show notification ONLY when app is active" (handled by JS here)
         if (Notification.permission === "granted") {
-           // Step 6: De-duplication using tag
+           // De-duplication using tag
            const notificationOptions = {
                body: body,
                icon: icon || '/icons/icon-192.png',
                tag: payload.messageId // Use messageId to prevent duplicates
            };
            
-           // Use the service worker registration to show notification if available, 
-           // otherwise fallback to new Notification()
            if (navigator.serviceWorker.controller) {
                navigator.serviceWorker.ready.then(registration => {
                    registration.showNotification(title, notificationOptions);
@@ -77,21 +74,36 @@ const saveTokenToFirestore = async (token) => {
     if (!residencyId || !username) return;
 
     let userRef = null;
-    let updateData = {};
+    let fieldKey = 'fcmToken';
+    let timestampKey = 'fcmUpdatedAt';
 
     if (role === "admin") {
        userRef = doc(db, "residencies", residencyId);
-       updateData = { adminFcmToken: arrayUnion(token) };
+       fieldKey = 'adminFcmToken';
+       timestampKey = 'adminFcmUpdatedAt';
     } else if (role === "resident") {
        userRef = doc(db, "residencies", residencyId, "residents", username);
-       updateData = { fcmToken: arrayUnion(token) };
     } else if (role === "guard") {
        userRef = doc(db, "residencies", residencyId, "guards", username);
-       updateData = { fcmToken: arrayUnion(token) };
     }
 
     if (userRef) {
-      await updateDoc(userRef, updateData);
+      // Prevent duplicate writes: compare existing token
+      const docSnap = await getDoc(userRef);
+      if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data[fieldKey] === token) {
+              console.log("Token already exists in Firestore, skipping write.");
+              return;
+          }
+      }
+
+      // Save token with merge: true to create field if missing
+      await setDoc(userRef, {
+          [fieldKey]: token,
+          [timestampKey]: serverTimestamp()
+      }, { merge: true });
+      
       console.log("Token saved to Firestore");
     }
   } catch (err) {
