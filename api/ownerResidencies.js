@@ -1,5 +1,5 @@
-import { initAdmin } from "./firebaseAdmin.js";
-import admin from "firebase-admin";
+import { db } from "./firebaseClient.js";
+import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -13,13 +13,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    initAdmin();
-    const db = admin.firestore();
-    
     // Fetch the owner's document to get their assigned residencies
-    const ownerDoc = await db.collection("owners").doc(username).get();
+    const ownerRef = doc(db, "owners", username);
+    const ownerDoc = await getDoc(ownerRef);
     
-    if (!ownerDoc.exists) {
+    if (!ownerDoc.exists()) {
         return res.status(404).json({ message: "Owner not found" });
     }
 
@@ -30,14 +28,10 @@ export default async function handler(req, res) {
         return res.status(200).json({ residencies: [] });
     }
 
-    // Fetch details for the assigned residencies
-    // Since we store names, we need to find docs where name is in the list
-    // Note: Firestore 'in' query supports up to 10 items. For robustness, we'll fetch all and filter 
-    // or if the list is small, use 'in'. Given "All registered residencies", list might be long.
-    // Efficient approach: Fetch all residencies (assuming < 100s) or batch get if we had IDs.
-    // Since we have names, and name is likely unique/indexed:
+    // Fetch all residencies and filter
+    const residenciesRef = collection(db, "residencies");
+    const allResidenciesSnapshot = await getDocs(residenciesRef);
     
-    const allResidenciesSnapshot = await db.collection("residencies").get();
     const residencies = allResidenciesSnapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter(residency => assignedResidencyNames.includes(residency.name));
