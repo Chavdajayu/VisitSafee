@@ -6,6 +6,7 @@ import importResidents from '../server-lib/importResidents.js';
 import ownerLogin from '../server-lib/ownerLogin.js';
 import ownerResidencies from '../server-lib/ownerResidencies.js';
 import registerResidency from '../server-lib/registerResidency.js';
+import notifyResident from '../server-lib/notifyResident.js';
 import residencyStatus from '../server-lib/residencyStatus.js';
 import toggleService from '../server-lib/toggleService.js';
 import updateRequestStatus from '../server-lib/update-request-status.js';
@@ -16,6 +17,7 @@ const handlers = {
   'broadcast-notification': broadcastNotification,
   deleteResidency,
   importResidents,
+  'notify-resident': notifyResident,
   ownerLogin,
   ownerResidencies,
   registerResidency,

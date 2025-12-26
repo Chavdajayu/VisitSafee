@@ -379,6 +379,22 @@ class StorageService {
 
     const docRef = await addDoc(collection(db, "residencies", residencyId, "visitor_requests"), docData);
     
+    // Notify residents
+    try {
+        fetch('/api/notify-resident', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                residencyId,
+                flatId: data.flatId,
+                visitorName: data.visitorName,
+                visitorId: docRef.id
+            })
+        }).catch(err => console.error("Notification trigger failed:", err));
+    } catch (e) {
+        console.error("Error triggering notification:", e);
+    }
+
     return docRef.id;
   }
 
