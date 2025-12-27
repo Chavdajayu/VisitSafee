@@ -77,63 +77,24 @@ self.addEventListener('notificationclick', (event) => {
   const action = event.action;
   
   if (action === 'APPROVE_VISITOR' || action === 'REJECT_VISITOR') {
-    const visitorId = data.visitorId;
-    const residentId = data.residentId;
+    // Open approval page instead of direct API call
+    const approveUrl = data.approveUrl;
+    const rejectUrl = data.rejectUrl;
+    const targetUrl = action === 'APPROVE_VISITOR' ? approveUrl : rejectUrl;
     
-    if (visitorId && residentId) {
-      const apiEndpoint = action === 'APPROVE_VISITOR' ? '/api/visitor-approve' : '/api/visitor-reject';
+    if (targetUrl) {
+      event.waitUntil(
+        clients.openWindow(targetUrl)
+      );
+    } else {
+      // Fallback URL construction
+      const visitorId = data.visitorId;
+      const token = data.approvalToken;
+      const actionType = action === 'APPROVE_VISITOR' ? 'approve' : 'reject';
+      const fallbackUrl = `/resident/decision?visitorId=${visitorId}&token=${token}&action=${actionType}`;
       
       event.waitUntil(
-        fetch(apiEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            visitorId: visitorId,
-            residentId: residentId
-          })
-        }).then(response => {
-          if (response.ok) {
-            return response.json().then(result => {
-              console.log(`Visitor ${action === 'APPROVE_VISITOR' ? 'approved' : 'rejected'} successfully`);
-              // Show confirmation notification
-              self.registration.showNotification(
-                action === 'APPROVE_VISITOR' ? 'Visitor Approved' : 'Visitor Rejected',
-                {
-                  body: result.message || `${data.visitorName || 'Visitor'} has been ${action === 'APPROVE_VISITOR' ? 'approved' : 'rejected'}`,
-                  icon: '/icons/icon-192.png',
-                  tag: `${visitorId}-${action}`,
-                  actions: []
-                }
-              );
-            });
-          } else {
-            return response.json().then(error => {
-              console.error(`Failed to ${action} visitor:`, error);
-              self.registration.showNotification(
-                'Action Failed',
-                {
-                  body: error.error || 'Failed to process request',
-                  icon: '/icons/icon-192.png',
-                  tag: `${visitorId}-error`,
-                  actions: []
-                }
-              );
-            });
-          }
-        }).catch(error => {
-          console.error(`Error processing ${action}:`, error);
-          self.registration.showNotification(
-            'Network Error',
-            {
-              body: 'Please check your connection and try again',
-              icon: '/icons/icon-192.png',
-              tag: `${visitorId}-network-error`,
-              actions: []
-            }
-          );
-        })
+        clients.openWindow(fallbackUrl)
       );
     }
   } else {

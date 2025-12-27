@@ -108,11 +108,11 @@ export default async function handler(req, res) {
       tokens: tokens,
     };
 
-    // For visitor requests, send individual notifications with resident-specific data
+    // For visitor requests, send individual notifications with approval URLs
     if (data.actionType === 'VISITOR_REQUEST' && targetType === 'specific_flat') {
       const individualNotifications = [];
       
-      // Send individual notifications to each resident with their specific ID
+      // Send same notification to all residents (no resident-specific data needed)
       for (const [token, residentId] of Object.entries(tokenToDocId)) {
         const individualPayload = {
           notification: {
@@ -122,7 +122,9 @@ export default async function handler(req, res) {
           data: {
             visitorId: data.visitorId,
             actionType: 'VISITOR_REQUEST',
-            residentId: residentId,
+            approvalToken: data.approvalToken,
+            approveUrl: data.approveUrl,
+            rejectUrl: data.rejectUrl,
             visitorName: data.visitorName || 'Unknown',
             blockName: data.blockName || 'Unknown',
             flatNumber: data.flatNumber || 'Unknown',

@@ -370,9 +370,13 @@ class StorageService {
   async createPublicVisitorRequest(data, residencyId, residencyName) {
     if (!residencyId) throw new Error("Residency ID is required");
     
+    // Generate approval token
+    const approvalToken = crypto.randomUUID();
+    
     const docData = {
       ...data,
       status: 'pending',
+      approvalToken: approvalToken,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -399,8 +403,12 @@ class StorageService {
       console.error('Error fetching flat/block details:', error);
     }
     
-    // Send notification using same service as admin
+    // Send notification with approval URLs
     try {
+      const baseUrl = window.location.origin;
+      const approveUrl = `${baseUrl}/resident/decision?visitorId=${visitorId}&token=${approvalToken}&action=approve`;
+      const rejectUrl = `${baseUrl}/resident/decision?visitorId=${visitorId}&token=${approvalToken}&action=reject`;
+      
       const response = await fetch('/api/sendNotification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -413,6 +421,9 @@ class StorageService {
           data: {
             visitorId: visitorId,
             actionType: 'VISITOR_REQUEST',
+            approvalToken: approvalToken,
+            approveUrl: approveUrl,
+            rejectUrl: rejectUrl,
             visitorName: data.visitorName,
             blockName: blockDetails?.name || 'Unknown',
             flatNumber: flatDetails?.number || 'Unknown',
