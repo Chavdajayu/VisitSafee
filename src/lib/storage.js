@@ -379,8 +379,18 @@ class StorageService {
 
     const docRef = await addDoc(collection(db, "residencies", residencyId, "visitor_requests"), docData);
     
-    // Send notification using unified endpoint
+    // Send notification using unified endpoint (with idempotency check)
     try {
+      // Check if notification already sent for this request
+      const requestDoc = await getDoc(docRef);
+      if (requestDoc.exists()) {
+        const requestData = requestDoc.data();
+        if (requestData.notificationSent) {
+          console.log('Notification already sent for request:', docRef.id);
+          return docRef.id;
+        }
+      }
+      
       const response = await fetch('/api/sendNotification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -401,7 +411,13 @@ class StorageService {
         })
       });
       
-      if (!response.ok) {
+      if (response.ok) {
+        // Mark notification as sent
+        await updateDoc(docRef, {
+          notificationSent: true,
+          notificationSentAt: new Date().toISOString()
+        });
+      } else {
         console.error('Notification API failed:', await response.text());
       }
     } catch (e) {

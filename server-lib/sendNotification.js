@@ -81,6 +81,7 @@ export default async function handler(req, res) {
           tokenToDocId[docData.fcmToken] = doc.id;
         }
       }
+
     }
 
     // Remove duplicates
@@ -107,6 +108,43 @@ export default async function handler(req, res) {
       },
       tokens: tokens,
     };
+
+    // For visitor requests, we need to send individual notifications with resident-specific data
+    if (data.type === 'visitor_request' && targetType === 'specific_flat') {
+      const individualNotifications = [];
+      
+      // Send individual notifications to each resident with their specific ID
+      for (const [token, residentId] of Object.entries(tokenToDocId)) {
+        const individualPayload = {
+          notification: {
+            title: title,
+            body: body,
+          },
+          data: {
+            ...data,
+            residentId: residentId, // Add specific resident ID for this notification
+            click_action: '/',
+            timestamp: Date.now().toString(),
+          },
+          token: token, // Single token
+        };
+        
+        individualNotifications.push(admin.messaging().send(individualPayload));
+      }
+      
+      // Send all individual notifications
+      const results = await Promise.allSettled(individualNotifications);
+      const successCount = results.filter(r => r.status === 'fulfilled').length;
+      const failureCount = results.filter(r => r.status === 'rejected').length;
+      
+      console.log(`Individual notifications sent: ${successCount} success, ${failureCount} failed`);
+      
+      return res.status(200).json({ 
+        success: true, 
+        sentCount: successCount, 
+        failureCount: failureCount 
+      });
+    }
 
     // Send notification
     const response = await admin.messaging().sendEachForMulticast(payload);

@@ -79,38 +79,73 @@ self.addEventListener('notificationclick', (event) => {
   if (action === 'approve' || action === 'reject') {
     // Handle approve/reject actions
     const requestId = data.requestId;
-    if (requestId) {
-      // Update request status via API
+    const residentId = data.residentId; // Get resident ID from notification data
+    
+    if (requestId && residentId) {
       event.waitUntil(
-        fetch('/api/update-request-status', {
+        fetch('/api/visitor-respond', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            requestId: requestId,
-            status: action === 'approve' ? 'approved' : 'rejected',
-            residencyId: data.residencyId || 'unknown'
+            visitorRequestId: requestId,
+            action: action === 'approve' ? 'APPROVE' : 'REJECT',
+            residentId: residentId,
+            notificationToken: 'notification_action'
           })
         }).then(response => {
           if (response.ok) {
-            console.log(`Request ${requestId} ${action}d successfully`);
-            // Show confirmation notification
-            self.registration.showNotification(
-              `Request ${action === 'approve' ? 'Approved' : 'Rejected'}`,
-              {
-                body: `Visitor request has been ${action}d`,
-                icon: '/icons/icon-192.png',
-                tag: `${requestId}-${action}`,
-                actions: []
-              }
-            );
+            return response.json().then(result => {
+              console.log(`Request ${requestId} ${action}d successfully`);
+              // Show confirmation notification
+              self.registration.showNotification(
+                `Request ${action === 'approve' ? 'Approved' : 'Rejected'}`,
+                {
+                  body: result.message || `Visitor request has been ${action}d`,
+                  icon: '/icons/icon-192.png',
+                  tag: `${requestId}-${action}`,
+                  actions: []
+                }
+              );
+            });
           } else {
-            console.error(`Failed to ${action} request:`, response.statusText);
+            return response.json().then(error => {
+              console.error(`Failed to ${action} request:`, error);
+              self.registration.showNotification(
+                'Action Failed',
+                {
+                  body: error.error || `Failed to ${action} visitor request`,
+                  icon: '/icons/icon-192.png',
+                  tag: `${requestId}-error`,
+                  actions: []
+                }
+              );
+            });
           }
         }).catch(error => {
           console.error(`Error ${action}ing request:`, error);
+          self.registration.showNotification(
+            'Network Error',
+            {
+              body: 'Please check your connection and try again',
+              icon: '/icons/icon-192.png',
+              tag: `${requestId}-network-error`,
+              actions: []
+            }
+          );
         })
+      );
+    } else {
+      console.error('Missing requestId or residentId in notification data');
+      self.registration.showNotification(
+        'Action Failed',
+        {
+          body: 'Missing required information for this action',
+          icon: '/icons/icon-192.png',
+          tag: 'missing-data-error',
+          actions: []
+        }
       );
     }
   } else {
