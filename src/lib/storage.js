@@ -379,20 +379,33 @@ class StorageService {
 
     const docRef = await addDoc(collection(db, "residencies", residencyId, "visitor_requests"), docData);
     
-    // Notify residents
+    // Send notification using unified endpoint
     try {
-        fetch('/api/notify-resident', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                residencyId,
-                flatId: data.flatId,
-                visitorName: data.visitorName,
-                visitorId: docRef.id
-            })
-        }).catch(err => console.error("Notification trigger failed:", err));
+      const response = await fetch('/api/sendNotification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          residencyId,
+          title: 'New Visitor Request',
+          body: `${data.visitorName} is requesting entry to visit. Please approve or reject.`,
+          targetType: 'specific_flat',
+          targetId: data.flatId,
+          data: {
+            type: 'visitor_request',
+            actionType: 'visitor_request',
+            requestId: docRef.id,
+            visitorName: data.visitorName,
+            flatId: data.flatId,
+            purpose: data.purpose || 'Visit'
+          }
+        })
+      });
+      
+      if (!response.ok) {
+        console.error('Notification API failed:', await response.text());
+      }
     } catch (e) {
-        console.error("Error triggering notification:", e);
+      console.error("Error sending notification:", e);
     }
 
     return docRef.id;

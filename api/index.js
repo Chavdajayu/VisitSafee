@@ -11,6 +11,7 @@ import residencyStatus from '../server-lib/residencyStatus.js';
 import toggleService from '../server-lib/toggleService.js';
 import updateRequestStatus from '../server-lib/update-request-status.js';
 import uploadResidentsFromPDF from '../server-lib/uploadResidentsFromPDF.js';
+import sendNotification from '../server-lib/sendNotification.js';
 
 const handlers = {
   createOwner,
@@ -25,6 +26,7 @@ const handlers = {
   toggleService,
   'update-request-status': updateRequestStatus,
   uploadResidentsFromPDF,
+  sendNotification,
 };
 
 export default async function handler(req, res) {
