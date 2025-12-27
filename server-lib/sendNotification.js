@@ -17,24 +17,6 @@ export default async function handler(req, res) {
 
   try {
     console.log(`Sending notification: ${title} to ${targetType} in residency ${residencyId}`);
-
-    // Idempotency check for visitor requests
-    if (data.type === 'visitor_request' && data.requestId) {
-      const requestRef = db().collection('residencies').doc(residencyId).collection('visitor_requests').doc(data.requestId);
-      const requestSnap = await requestRef.get();
-      
-      if (requestSnap.exists()) {
-        const requestData = requestSnap.data();
-        if (requestData.notificationSent) {
-          console.log('Notification already sent for request:', data.requestId);
-          return res.status(200).json({ 
-            success: true, 
-            sentCount: 0, 
-            message: 'Notification already sent' 
-          });
-        }
-      }
-    }
     let tokens = [];
     const tokenToDocId = {};
 
@@ -127,7 +109,7 @@ export default async function handler(req, res) {
     };
 
     // For visitor requests, send individual notifications with resident-specific data
-    if (data.type === 'visitor_request' && targetType === 'specific_flat') {
+    if (data.actionType === 'VISITOR_REQUEST' && targetType === 'specific_flat') {
       const individualNotifications = [];
       
       // Send individual notifications to each resident with their specific ID
@@ -138,12 +120,17 @@ export default async function handler(req, res) {
             body: body,
           },
           data: {
-            ...data,
-            residentId: residentId, // Add specific resident ID for this notification
+            visitorId: data.visitorId,
+            actionType: 'VISITOR_REQUEST',
+            residentId: residentId,
+            visitorName: data.visitorName || 'Unknown',
+            blockName: data.blockName || 'Unknown',
+            flatNumber: data.flatNumber || 'Unknown',
+            purpose: data.purpose || 'Visit',
             click_action: '/',
             timestamp: Date.now().toString(),
           },
-          token: token, // Single token
+          token: token,
         };
         
         individualNotifications.push(admin.messaging().send(individualPayload));
@@ -154,46 +141,7 @@ export default async function handler(req, res) {
       const successCount = results.filter(r => r.status === 'fulfilled').length;
       const failureCount = results.filter(r => r.status === 'rejected').length;
       
-      console.log(`Individual notifications sent: ${successCount} success, ${failureCount} failed`);
-      
-      // Mark notification as sent in the request document
-      if (successCount > 0 && data.requestId) {
-        try {
-          const requestRef = db().collection('residencies').doc(residencyId).collection('visitor_requests').doc(data.requestId);
-          await requestRef.update({
-            notificationSent: true,
-            notificationSentAt: new Date().toISOString(),
-            notificationCount: successCount
-          });
-        } catch (error) {
-          console.error('Error marking notification as sent:', error);
-        }
-      }
-      
-      // Clean up failed tokens
-      if (failureCount > 0) {
-        const batch = db().batch();
-        let batchCount = 0;
-        
-        results.forEach((result, idx) => {
-          if (result.status === 'rejected') {
-            const token = Object.keys(tokenToDocId)[idx];
-            const docId = tokenToDocId[token];
-            if (docId) {
-              const docRef = db().collection('residencies').doc(residencyId).collection('residents').doc(docId);
-              batch.update(docRef, {
-                fcmToken: admin.firestore.FieldValue.delete()
-              });
-              batchCount++;
-            }
-          }
-        });
-        
-        if (batchCount > 0) {
-          await batch.commit();
-          console.log('Invalid tokens removed');
-        }
-      }
+      console.log(`Visitor notifications sent: ${successCount} success, ${failureCount} failed`);
       
       return res.status(200).json({ 
         success: true, 

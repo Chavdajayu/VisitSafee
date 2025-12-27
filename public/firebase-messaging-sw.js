@@ -28,7 +28,7 @@ if (firebaseConfig.apiKey) {
     firebase.initializeApp(firebaseConfig);
     const messaging = firebase.messaging();
 
-    // Background Message Handler with Rich Notifications
+    // Background Message Handler with Action Buttons
     messaging.onBackgroundMessage((payload) => {
       console.log('[firebase-messaging-sw.js] Received background message ', payload);
       
@@ -36,36 +36,27 @@ if (firebaseConfig.apiKey) {
       const data = payload.data || {};
       
       // Check if this is a visitor request notification
-      const isVisitorRequest = data.type === 'visitor_request' || data.actionType === 'visitor_request';
-      
-      let notificationBody = body;
-      
-      // Create rich notification body for visitor requests
-      if (isVisitorRequest && data.visitorName) {
-        notificationBody = `👤 ${data.visitorName}\n📞 ${data.visitorPhone || 'No phone'}\n🏢 ${data.blockName} ${data.flatNumber}\n📝 ${data.purpose || 'Visit'}${data.vehicleNumber && data.vehicleNumber !== 'None' ? '\n🚗 ' + data.vehicleNumber : ''}`;
-      }
+      const isVisitorRequest = data.actionType === 'VISITOR_REQUEST';
       
       const notificationOptions = {
-        body: notificationBody,
+        body: body,
         icon: icon || '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
-        tag: data.requestId || payload.messageId, // Prevent duplicates
-        requireInteraction: isVisitorRequest, // Keep visitor requests visible
-        data: data, // Pass data for click handling
-        silent: false,
-        vibrate: [200, 100, 200]
+        tag: data.visitorId || payload.messageId,
+        requireInteraction: isVisitorRequest,
+        data: data
       };
       
       // Add action buttons for visitor requests
-      if (isVisitorRequest && data.requestId) {
+      if (isVisitorRequest && data.visitorId) {
         notificationOptions.actions = [
           {
-            action: 'approve',
+            action: 'APPROVE_VISITOR',
             title: '✅ Approve',
             icon: '/icons/icon-192.png'
           },
           {
-            action: 'reject', 
+            action: 'REJECT_VISITOR', 
             title: '❌ Reject',
             icon: '/icons/icon-192.png'
           }
@@ -85,13 +76,12 @@ self.addEventListener('notificationclick', (event) => {
   const data = event.notification.data || {};
   const action = event.action;
   
-  if (action === 'approve' || action === 'reject') {
-    // Handle approve/reject actions
-    const requestId = data.requestId;
-    const residentId = data.residentId; // Get resident ID from notification data
+  if (action === 'APPROVE_VISITOR' || action === 'REJECT_VISITOR') {
+    const visitorId = data.visitorId;
+    const residentId = data.residentId;
     
-    if (requestId && residentId) {
-      const apiEndpoint = action === 'approve' ? '/api/visitor-approve' : '/api/visitor-reject';
+    if (visitorId && residentId) {
+      const apiEndpoint = action === 'APPROVE_VISITOR' ? '/api/visitor-approve' : '/api/visitor-reject';
       
       event.waitUntil(
         fetch(apiEndpoint, {
@@ -100,82 +90,64 @@ self.addEventListener('notificationclick', (event) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            requestId: requestId,
-            residentId: residentId,
-            residentToken: 'notification_action' // Simple auth token
+            visitorId: visitorId,
+            residentId: residentId
           })
         }).then(response => {
           if (response.ok) {
             return response.json().then(result => {
-              console.log(`Request ${requestId} ${action}d successfully`);
+              console.log(`Visitor ${action === 'APPROVE_VISITOR' ? 'approved' : 'rejected'} successfully`);
               // Show confirmation notification
               self.registration.showNotification(
-                result.message || `Request ${action === 'approve' ? 'Approved' : 'Rejected'}`,
+                action === 'APPROVE_VISITOR' ? 'Visitor Approved' : 'Visitor Rejected',
                 {
-                  body: `👤 ${data.visitorName || 'Visitor'} - ${result.message || 'Action completed'}`,
+                  body: result.message || `${data.visitorName || 'Visitor'} has been ${action === 'APPROVE_VISITOR' ? 'approved' : 'rejected'}`,
                   icon: '/icons/icon-192.png',
-                  tag: `${requestId}-${action}`,
-                  actions: [],
-                  vibrate: [100, 50, 100]
+                  tag: `${visitorId}-${action}`,
+                  actions: []
                 }
               );
             });
           } else {
             return response.json().then(error => {
-              console.error(`Failed to ${action} request:`, error);
+              console.error(`Failed to ${action} visitor:`, error);
               self.registration.showNotification(
                 'Action Failed',
                 {
-                  body: error.error || `Failed to ${action} visitor request`,
+                  body: error.error || 'Failed to process request',
                   icon: '/icons/icon-192.png',
-                  tag: `${requestId}-error`,
+                  tag: `${visitorId}-error`,
                   actions: []
                 }
               );
             });
           }
         }).catch(error => {
-          console.error(`Error ${action}ing request:`, error);
+          console.error(`Error processing ${action}:`, error);
           self.registration.showNotification(
             'Network Error',
             {
               body: 'Please check your connection and try again',
               icon: '/icons/icon-192.png',
-              tag: `${requestId}-network-error`,
+              tag: `${visitorId}-network-error`,
               actions: []
             }
           );
         })
       );
-    } else {
-      console.error('Missing requestId or residentId in notification data');
-      self.registration.showNotification(
-        'Action Failed',
-        {
-          body: 'Missing required information for this action',
-          icon: '/icons/icon-192.png',
-          tag: 'missing-data-error',
-          actions: []
-        }
-      );
     }
   } else {
     // Default click - open app
-    const urlToOpen = data.url || '/';
+    const urlToOpen = data.click_action || '/';
     event.waitUntil(
       clients.matchAll({ type: 'window', includeUncontrolled: true })
         .then((clientList) => {
-          // Check if app is already open
           for (const client of clientList) {
             if (client.url.includes(self.location.origin) && 'focus' in client) {
               client.focus();
-              if (urlToOpen !== '/') {
-                client.navigate(urlToOpen);
-              }
               return;
             }
           }
-          // Open new window if app not open
           if (clients.openWindow) {
             return clients.openWindow(urlToOpen);
           }

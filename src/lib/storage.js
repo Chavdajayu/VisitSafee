@@ -378,76 +378,57 @@ class StorageService {
     };
 
     const docRef = await addDoc(collection(db, "residencies", residencyId, "visitor_requests"), docData);
+    const visitorId = docRef.id;
     
-    // Send notification using unified endpoint (with idempotency check)
+    // Get flat and block details for notification
+    let flatDetails = null;
+    let blockDetails = null;
+    
     try {
-      // Check if notification already sent for this request
-      const requestDoc = await getDoc(docRef);
-      if (requestDoc.exists()) {
-        const requestData = requestDoc.data();
-        if (requestData.notificationSent) {
-          console.log('Notification already sent for request:', docRef.id);
-          return docRef.id;
-        }
-      }
-      
-      // Get flat and block details for rich notification
-      let flatDetails = null;
-      let blockDetails = null;
-      
-      try {
-        const flatDoc = await getDoc(doc(db, "residencies", residencyId, "flats", data.flatId));
-        if (flatDoc.exists()) {
-          flatDetails = flatDoc.data();
-          if (flatDetails.blockId) {
-            const blockDoc = await getDoc(doc(db, "residencies", residencyId, "blocks", flatDetails.blockId));
-            if (blockDoc.exists()) {
-              blockDetails = blockDoc.data();
-            }
+      const flatDoc = await getDoc(doc(db, "residencies", residencyId, "flats", data.flatId));
+      if (flatDoc.exists()) {
+        flatDetails = flatDoc.data();
+        if (flatDetails.blockId) {
+          const blockDoc = await getDoc(doc(db, "residencies", residencyId, "blocks", flatDetails.blockId));
+          if (blockDoc.exists()) {
+            blockDetails = blockDoc.data();
           }
         }
-      } catch (error) {
-        console.error('Error fetching flat/block details:', error);
       }
-      
+    } catch (error) {
+      console.error('Error fetching flat/block details:', error);
+    }
+    
+    // Send notification using same service as admin
+    try {
       const response = await fetch('/api/sendNotification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           residencyId,
           title: 'New Visitor Request',
-          body: `${data.visitorName} (${data.visitorPhone}) wants to visit ${blockDetails?.name || 'Block'} ${flatDetails?.number || 'Flat'} for ${data.purpose || 'Visit'}`,
+          body: `${data.visitorName} wants to visit ${blockDetails?.name || 'Block'} ${flatDetails?.number || 'Flat'}`,
           targetType: 'specific_flat',
           targetId: data.flatId,
           data: {
-            type: 'visitor_request',
-            actionType: 'visitor_request',
-            requestId: docRef.id,
+            visitorId: visitorId,
+            actionType: 'VISITOR_REQUEST',
             visitorName: data.visitorName,
-            visitorPhone: data.visitorPhone,
-            blockName: blockDetails?.name || 'Unknown Block',
-            flatNumber: flatDetails?.number || 'Unknown Flat',
-            purpose: data.purpose || 'Visit',
-            flatId: data.flatId,
-            vehicleNumber: data.vehicleNumber || 'None'
+            blockName: blockDetails?.name || 'Unknown',
+            flatNumber: flatDetails?.number || 'Unknown',
+            purpose: data.purpose || 'Visit'
           }
         })
       });
       
-      if (response.ok) {
-        // Mark notification as sent
-        await updateDoc(docRef, {
-          notificationSent: true,
-          notificationSentAt: new Date().toISOString()
-        });
-      } else {
-        console.error('Notification API failed:', await response.text());
+      if (!response.ok) {
+        console.error('Notification failed:', await response.text());
       }
     } catch (e) {
       console.error("Error sending notification:", e);
     }
 
-    return docRef.id;
+    return visitorId;
   }
 
   async createVisitorRequest(data) {

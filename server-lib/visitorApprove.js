@@ -8,10 +8,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { requestId, residentId, residentToken } = req.body;
+    const { visitorId, residentId } = req.body;
 
-    if (!requestId || !residentId) {
-      return res.status(400).json({ error: 'Missing requestId or residentId' });
+    if (!visitorId || !residentId) {
+      return res.status(400).json({ error: 'Missing visitorId or residentId' });
     }
 
     const firestore = db();
@@ -22,7 +22,7 @@ export default async function handler(req, res) {
     
     const residenciesSnap = await firestore.collection('residencies').get();
     for (const residencyDoc of residenciesSnap.docs) {
-      const requestRef = residencyDoc.ref.collection('visitor_requests').doc(requestId);
+      const requestRef = residencyDoc.ref.collection('visitor_requests').doc(visitorId);
       const requestSnap = await requestRef.get();
       if (requestSnap.exists) {
         targetResidencyId = residencyDoc.id;
@@ -76,11 +76,11 @@ export default async function handler(req, res) {
     }
 
     if (!hasAccess) {
-      return res.status(403).json({ error: 'Access denied - not authorized for this flat' });
+      return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Update request status to approved
-    const requestRef = firestore.collection('residencies').doc(targetResidencyId).collection('visitor_requests').doc(requestId);
+    // Update visitor status to approved
+    const requestRef = firestore.collection('residencies').doc(targetResidencyId).collection('visitor_requests').doc(visitorId);
     await requestRef.update({
       status: 'approved',
       approvedBy: residentId,
@@ -88,12 +88,11 @@ export default async function handler(req, res) {
       updatedAt: new Date().toISOString()
     });
 
-    console.log(`Visitor request ${requestId} approved by resident ${residentId}`);
+    console.log(`Visitor ${visitorId} approved by resident ${residentId}`);
 
     return res.status(200).json({ 
       success: true, 
-      message: 'Visitor Approved – Access Granted',
-      status: 'approved'
+      message: 'Visitor approved successfully'
     });
 
   } catch (error) {
