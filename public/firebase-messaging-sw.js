@@ -38,13 +38,22 @@ if (firebaseConfig.apiKey) {
       // Check if this is a visitor request notification
       const isVisitorRequest = data.type === 'visitor_request' || data.actionType === 'visitor_request';
       
+      let notificationBody = body;
+      
+      // Create rich notification body for visitor requests
+      if (isVisitorRequest && data.visitorName) {
+        notificationBody = `👤 ${data.visitorName}\n📞 ${data.visitorPhone || 'No phone'}\n🏢 ${data.blockName} ${data.flatNumber}\n📝 ${data.purpose || 'Visit'}${data.vehicleNumber && data.vehicleNumber !== 'None' ? '\n🚗 ' + data.vehicleNumber : ''}`;
+      }
+      
       const notificationOptions = {
-        body: body,
+        body: notificationBody,
         icon: icon || '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
         tag: data.requestId || payload.messageId, // Prevent duplicates
         requireInteraction: isVisitorRequest, // Keep visitor requests visible
-        data: data // Pass data for click handling
+        data: data, // Pass data for click handling
+        silent: false,
+        vibrate: [200, 100, 200]
       };
       
       // Add action buttons for visitor requests
@@ -82,17 +91,18 @@ self.addEventListener('notificationclick', (event) => {
     const residentId = data.residentId; // Get resident ID from notification data
     
     if (requestId && residentId) {
+      const apiEndpoint = action === 'approve' ? '/api/visitor-approve' : '/api/visitor-reject';
+      
       event.waitUntil(
-        fetch('/api/visitor-respond', {
+        fetch(apiEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            visitorRequestId: requestId,
-            action: action === 'approve' ? 'APPROVE' : 'REJECT',
+            requestId: requestId,
             residentId: residentId,
-            notificationToken: 'notification_action'
+            residentToken: 'notification_action' // Simple auth token
           })
         }).then(response => {
           if (response.ok) {
@@ -100,12 +110,13 @@ self.addEventListener('notificationclick', (event) => {
               console.log(`Request ${requestId} ${action}d successfully`);
               // Show confirmation notification
               self.registration.showNotification(
-                `Request ${action === 'approve' ? 'Approved' : 'Rejected'}`,
+                result.message || `Request ${action === 'approve' ? 'Approved' : 'Rejected'}`,
                 {
-                  body: result.message || `Visitor request has been ${action}d`,
+                  body: `👤 ${data.visitorName || 'Visitor'} - ${result.message || 'Action completed'}`,
                   icon: '/icons/icon-192.png',
                   tag: `${requestId}-${action}`,
-                  actions: []
+                  actions: [],
+                  vibrate: [100, 50, 100]
                 }
               );
             });

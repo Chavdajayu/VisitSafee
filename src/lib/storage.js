@@ -391,13 +391,32 @@ class StorageService {
         }
       }
       
+      // Get flat and block details for rich notification
+      let flatDetails = null;
+      let blockDetails = null;
+      
+      try {
+        const flatDoc = await getDoc(doc(db, "residencies", residencyId, "flats", data.flatId));
+        if (flatDoc.exists()) {
+          flatDetails = flatDoc.data();
+          if (flatDetails.blockId) {
+            const blockDoc = await getDoc(doc(db, "residencies", residencyId, "blocks", flatDetails.blockId));
+            if (blockDoc.exists()) {
+              blockDetails = blockDoc.data();
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching flat/block details:', error);
+      }
+      
       const response = await fetch('/api/sendNotification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           residencyId,
           title: 'New Visitor Request',
-          body: `${data.visitorName} is requesting entry to visit. Please approve or reject.`,
+          body: `${data.visitorName} (${data.visitorPhone}) wants to visit ${blockDetails?.name || 'Block'} ${flatDetails?.number || 'Flat'} for ${data.purpose || 'Visit'}`,
           targetType: 'specific_flat',
           targetId: data.flatId,
           data: {
@@ -405,8 +424,12 @@ class StorageService {
             actionType: 'visitor_request',
             requestId: docRef.id,
             visitorName: data.visitorName,
+            visitorPhone: data.visitorPhone,
+            blockName: blockDetails?.name || 'Unknown Block',
+            flatNumber: flatDetails?.number || 'Unknown Flat',
+            purpose: data.purpose || 'Visit',
             flatId: data.flatId,
-            purpose: data.purpose || 'Visit'
+            vehicleNumber: data.vehicleNumber || 'None'
           }
         })
       });

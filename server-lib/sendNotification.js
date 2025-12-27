@@ -18,6 +18,23 @@ export default async function handler(req, res) {
   try {
     console.log(`Sending notification: ${title} to ${targetType} in residency ${residencyId}`);
 
+    // Idempotency check for visitor requests
+    if (data.type === 'visitor_request' && data.requestId) {
+      const requestRef = db().collection('residencies').doc(residencyId).collection('visitor_requests').doc(data.requestId);
+      const requestSnap = await requestRef.get();
+      
+      if (requestSnap.exists()) {
+        const requestData = requestSnap.data();
+        if (requestData.notificationSent) {
+          console.log('Notification already sent for request:', data.requestId);
+          return res.status(200).json({ 
+            success: true, 
+            sentCount: 0, 
+            message: 'Notification already sent' 
+          });
+        }
+      }
+    }
     let tokens = [];
     const tokenToDocId = {};
 
@@ -109,7 +126,7 @@ export default async function handler(req, res) {
       tokens: tokens,
     };
 
-    // For visitor requests, we need to send individual notifications with resident-specific data
+    // For visitor requests, send individual notifications with resident-specific data
     if (data.type === 'visitor_request' && targetType === 'specific_flat') {
       const individualNotifications = [];
       
@@ -138,6 +155,45 @@ export default async function handler(req, res) {
       const failureCount = results.filter(r => r.status === 'rejected').length;
       
       console.log(`Individual notifications sent: ${successCount} success, ${failureCount} failed`);
+      
+      // Mark notification as sent in the request document
+      if (successCount > 0 && data.requestId) {
+        try {
+          const requestRef = db().collection('residencies').doc(residencyId).collection('visitor_requests').doc(data.requestId);
+          await requestRef.update({
+            notificationSent: true,
+            notificationSentAt: new Date().toISOString(),
+            notificationCount: successCount
+          });
+        } catch (error) {
+          console.error('Error marking notification as sent:', error);
+        }
+      }
+      
+      // Clean up failed tokens
+      if (failureCount > 0) {
+        const batch = db().batch();
+        let batchCount = 0;
+        
+        results.forEach((result, idx) => {
+          if (result.status === 'rejected') {
+            const token = Object.keys(tokenToDocId)[idx];
+            const docId = tokenToDocId[token];
+            if (docId) {
+              const docRef = db().collection('residencies').doc(residencyId).collection('residents').doc(docId);
+              batch.update(docRef, {
+                fcmToken: admin.firestore.FieldValue.delete()
+              });
+              batchCount++;
+            }
+          }
+        });
+        
+        if (batchCount > 0) {
+          await batch.commit();
+          console.log('Invalid tokens removed');
+        }
+      }
       
       return res.status(200).json({ 
         success: true, 
